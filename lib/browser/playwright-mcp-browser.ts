@@ -1,61 +1,94 @@
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import type { BrowserActionResult, BrowserController, BrowserObservation } from "./browser";
+import { chromium, type Browser, type Page } from "playwright";
+import type {
+  BrowserActionResult,
+  BrowserController,
+  BrowserObservation,
+  DomInspection,
+  ElementInspection,
+} from "./browser";
+import { ensureChromium } from "./chromium";
+import {
+  DOM_TEXT_MAX_LEN,
+  evaluateDomCandidates,
+} from "./dom-inspect";
 
-const mcpCli = path.join(process.cwd(), "node_modules", "@playwright", "mcp", "cli.js");
-const mcpArgs = [mcpCli, "--snapshot-mode", "none", "--caps", "vision"];
+const mcpCli = path.join(
+  process.cwd(),
+  "node_modules",
+  "@playwright",
+  "mcp",
+  "cli.js",
+);
 
 type G = typeof globalThis & {
   ruskMcp?: Promise<Client>;
   ruskMcpLock?: Promise<unknown>;
   ruskMcpArgs?: string;
-  ruskHasWindow?: boolean;
+  ruskCdpBrowser?: Promise<Browser>;
+  ruskLastPageUrl?: string;
 };
 
 const g = globalThis as G;
 
 /** A tool-level rejection means the browser is still usable. */
-class PlaywrightToolError extends Error {
+export class PlaywrightToolError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "PlaywrightToolError";
   }
 }
 
-function toolText(result: unknown) {
-  // #region agent log
-  fetch("http://127.0.0.1:7664/ingest/fd9e0927-3b2b-4655-99d8-b10f5823d4d8", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Debug-Session-Id": "ff1940",
+/** Always navigate the current tab — never open a new one. */
+export function navigateMcpCall(url: string) {
+  return {
+    name: "browser_navigate" as const,
+    arguments: { url },
+  };
+}
+
+/** Fixed inspector — never accept model-supplied JavaScript. */
+export const INSPECT_ELEMENT_FN = String.raw`(element) => {
+  const max = ${DOM_TEXT_MAX_LEN};
+  const trim = (value) => {
+    if (value == null) return null;
+    const normalized = String(value).replace(/\s+/g, " ").trim();
+    if (!normalized) return null;
+    return normalized.length <= max
+      ? normalized
+      : normalized.slice(0, max - 1) + "…";
+  };
+  const rect = element.getBoundingClientRect();
+  return {
+    tag: element.tagName ? element.tagName.toLowerCase() : null,
+    role: element.getAttribute("role"),
+    text: trim(element.textContent),
+    ariaLabel: trim(element.getAttribute("aria-label")),
+    name: trim(element.getAttribute("name") || element.name),
+    type: trim(element.getAttribute("type") || element.type),
+    href: trim(element.href || element.getAttribute("href")),
+    placeholder: trim(element.getAttribute("placeholder") || element.placeholder),
+    autocomplete: trim(element.getAttribute("autocomplete") || element.autocomplete),
+    contentEditable:
+      element.isContentEditable === true ||
+      element.getAttribute("contenteditable") === "true",
+    disabled: Boolean(
+      element.disabled || element.getAttribute("aria-disabled") === "true",
+    ),
+    readOnly: Boolean(element.readOnly),
+    value: trim(typeof element.value === "string" ? element.value : null),
+    rect: {
+      x: Math.round(rect.x),
+      y: Math.round(rect.y),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
     },
-    body: JSON.stringify({
-      sessionId: "ff1940",
-      runId: "post-fix",
-      hypothesisId: "B",
-      location: "playwright-mcp-browser.ts:toolText",
-      message: "toolText input shape",
-      data: {
-        isObject: typeof result === "object" && result !== null,
-        hasContent:
-          typeof result === "object" &&
-          result !== null &&
-          "content" in result,
-        hasToolResult:
-          typeof result === "object" &&
-          result !== null &&
-          "toolResult" in result,
-        keys:
-          typeof result === "object" && result !== null
-            ? Object.keys(result as object).slice(0, 8)
-            : [],
-      },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
+  };
+}`;
+
+function toolText(result: unknown) {
   if (
     typeof result !== "object" ||
     result === null ||
@@ -91,11 +124,27 @@ function pageMeta(snapshot: string) {
   };
 }
 
+async function mcpArgs(): Promise<string[]> {
+  const { cdpEndpoint } = await ensureChromium();
+  return [
+    mcpCli,
+    "--snapshot-mode",
+    "none",
+    "--caps",
+    "vision",
+    "--cdp-endpoint",
+    cdpEndpoint,
+    "--idle-timeout",
+    "0",
+  ];
+}
+
 async function connectClient() {
-  console.log("[mcp] starting", process.execPath, ...mcpArgs);
+  const args = await mcpArgs();
+  console.log("[mcp] starting", process.execPath, ...args);
   const transport = new StdioClientTransport({
     command: process.execPath,
-    args: [...mcpArgs],
+    args,
     stderr: "pipe",
   });
   transport.stderr?.on("data", (chunk) => {
@@ -112,24 +161,65 @@ async function connectClient() {
   return client;
 }
 
-function getClient() {
-  // ponytail: one process-wide browser; restart MCP if the child dies
-  const argKey = mcpArgs.join("\0");
+async function getClient() {
+  const args = await mcpArgs();
+  const argKey = args.join("\0");
   if (g.ruskMcpArgs !== argKey) {
     const prev = g.ruskMcp;
     g.ruskMcp = undefined;
     g.ruskMcpArgs = argKey;
-    g.ruskHasWindow = false;
     if (prev) void prev.then((c) => c.close()).catch(() => {});
   }
   if (!g.ruskMcp) {
     g.ruskMcp = connectClient().catch((err) => {
       g.ruskMcp = undefined;
-      g.ruskHasWindow = false;
       throw err;
     });
   }
   return g.ruskMcp;
+}
+
+async function getCdpBrowser(): Promise<Browser> {
+  if (!g.ruskCdpBrowser) {
+    g.ruskCdpBrowser = (async () => {
+      const { cdpEndpoint } = await ensureChromium();
+      console.log("[cdp] connectOverCDP", cdpEndpoint);
+      return chromium.connectOverCDP(cdpEndpoint);
+    })().catch((err) => {
+      g.ruskCdpBrowser = undefined;
+      throw err;
+    });
+  }
+  return g.ruskCdpBrowser;
+}
+
+export function pickActivePage(
+  browser: Browser,
+  preferredUrl?: string,
+): Page {
+  const pages = browser.contexts().flatMap((context) => context.pages());
+  if (pages.length === 0) {
+    throw new PlaywrightToolError("No pages available on CDP browser");
+  }
+
+  if (preferredUrl) {
+    const exact = pages.find((page) => page.url() === preferredUrl);
+    if (exact) return exact;
+    const prefix = pages.find(
+      (page) =>
+        page.url().startsWith(preferredUrl) ||
+        preferredUrl.startsWith(page.url()),
+    );
+    if (prefix) return prefix;
+  }
+
+  const real = pages.filter(
+    (page) => page.url() && page.url() !== "about:blank",
+  );
+  if (real.length > 0) {
+    return real[real.length - 1]!;
+  }
+  return pages[pages.length - 1]!;
 }
 
 function withLock<T>(fn: () => Promise<T>) {
@@ -150,21 +240,27 @@ async function withClient<T>(fn: (client: Client) => Promise<T>): Promise<T> {
     } catch (err) {
       console.error("[MCP] call failed", err);
 
-      // A Playwright action can be rejected while its browser and page remain
-      // healthy (for example, `fill` on Desmos's MathQuill content div). Keep
-      // that session alive so the following observation can use the current
-      // page instead of a newly launched, blank browser.
+      // Tool-level failures keep the shared Chromium + MCP session alive.
       if (err instanceof PlaywrightToolError) {
         throw err;
       }
 
       g.ruskMcp = undefined;
-      g.ruskHasWindow = false;
+      const cdp = g.ruskCdpBrowser;
+      g.ruskCdpBrowser = undefined;
       try {
         await client.close();
       } catch {
         /* already dead */
       }
+      if (cdp) {
+        try {
+          await (await cdp).close();
+        } catch {
+          /* already dead */
+        }
+      }
+      // Keep RUSK-owned Chromium alive; next call reconnects MCP/CDP to it.
       throw err;
     }
   });
@@ -185,6 +281,24 @@ function keyboardKey(character: string) {
   return character;
 }
 
+function parseInspectPayload(text: string): ElementInspection {
+  // browser_evaluate usually returns JSON text; tolerate fenced/noisy wrappers.
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start === -1 || end === -1 || end < start) {
+    throw new PlaywrightToolError(
+      `inspect_element did not return JSON: ${text.slice(0, 200)}`,
+    );
+  }
+  try {
+    return JSON.parse(text.slice(start, end + 1)) as ElementInspection;
+  } catch {
+    throw new PlaywrightToolError(
+      `inspect_element returned invalid JSON: ${text.slice(0, 200)}`,
+    );
+  }
+}
+
 export function getBrowser(): BrowserController {
   return {
     async observe(): Promise<BrowserObservation> {
@@ -194,24 +308,27 @@ export function getBrowser(): BrowserController {
           await client.callTool({ name: "browser_snapshot", arguments: {} }),
         );
         console.log("[MCP] snapshot complete");
-        return { snapshot, ...pageMeta(snapshot) };
+        const meta = pageMeta(snapshot);
+        if (meta.url) g.ruskLastPageUrl = meta.url;
+        return { snapshot, ...meta };
       });
     },
 
     async navigate(url: string): Promise<BrowserActionResult> {
       return withClient(async (client) => {
         console.log("[MCP] navigating", url);
-        const result = g.ruskHasWindow
-          ? await call(client, "browser_tabs", { action: "new", url })
-          : await call(client, "browser_navigate", { url });
+        const { name, arguments: args } = navigateMcpCall(url);
+        const result = await call(client, name, args);
         console.log("[MCP] navigate complete");
-        g.ruskHasWindow = true;
+        g.ruskLastPageUrl = url;
         return result;
       });
     },
 
     click(ref: string) {
-      return withClient((client) => call(client, "browser_click", { target: ref }));
+      return withClient((client) =>
+        call(client, "browser_click", { target: ref }),
+      );
     },
 
     type(ref: string, text: string) {
@@ -240,16 +357,23 @@ export function getBrowser(): BrowserController {
 
     select(ref: string, value: string) {
       return withClient((client) =>
-        call(client, "browser_select_option", { target: ref, values: [value] }),
+        call(client, "browser_select_option", {
+          target: ref,
+          values: [value],
+        }),
       );
     },
 
     pressKey(key: string) {
-      return withClient((client) => call(client, "browser_press_key", { key }));
+      return withClient((client) =>
+        call(client, "browser_press_key", { key }),
+      );
     },
 
     hover(ref: string) {
-      return withClient((client) => call(client, "browser_hover", { target: ref }));
+      return withClient((client) =>
+        call(client, "browser_hover", { target: ref }),
+      );
     },
 
     goBack() {
@@ -262,6 +386,38 @@ export function getBrowser(): BrowserController {
       return withClient((client) =>
         call(client, "browser_mouse_wheel", { deltaX: 0, deltaY }),
       );
+    },
+
+    async inspectElement(ref: string): Promise<ElementInspection> {
+      return withClient(async (client) => {
+        const text = toolText(
+          await client.callTool({
+            name: "browser_evaluate",
+            arguments: {
+              target: ref,
+              element: `snapshot ref ${ref}`,
+              function: INSPECT_ELEMENT_FN,
+            },
+          }),
+        );
+        return parseInspectPayload(text);
+      });
+    },
+
+    async inspectDom(limit?: number): Promise<DomInspection> {
+      return withLock(async () => {
+        // Ensure MCP/Chromium are up so a page exists, then inspect via CDP.
+        await getClient();
+        const browser = await getCdpBrowser();
+        const page = pickActivePage(browser, g.ruskLastPageUrl);
+        const candidates = await evaluateDomCandidates(page, limit);
+        g.ruskLastPageUrl = page.url();
+        return {
+          url: page.url(),
+          title: await page.title(),
+          candidates,
+        };
+      });
     },
   };
 }

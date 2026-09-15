@@ -1,5 +1,6 @@
 import type { BrowserController } from "../browser/browser";
 import { ChatOpenAI } from "@langchain/openai";
+import { ensureChromium } from "../browser/chromium";
 import { getBrowser } from "../browser/playwright-mcp-browser";
 import { createBrowserTools } from "../tools/browser";
 import { createRegistry } from "../tools/registry";
@@ -22,6 +23,7 @@ export function getAgentRuntime(): Promise<AgentRuntime> {
 }
 
 async function createRuntime(): Promise<AgentRuntime> {
+  await ensureChromium();
   const browser = getBrowser();
 
   const model = new ChatOpenAI({

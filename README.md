@@ -5,8 +5,13 @@
 ```bash
 npm install
 cp .env.example .env
+npx playwright install chromium
 npm run dev
 ```
+
+RUSK owns a dedicated Chromium at `.rusk-browser/` (not your personal Chrome
+profile). Playwright MCP and a CDP inspector both attach to that process.
+Optional: `RUSK_CDP_PORT`, `RUSK_HEADLESS=true`.
 
 ## LangSmith tracing
 

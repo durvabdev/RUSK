@@ -73,10 +73,9 @@ test("decideNode returns only a structured decision", async () => {
     ACTOR_SYSTEM_PROMPT,
     /Never return a browser tool name such as "navigate", "click", or "type" as\n+the top-level type/,
   );
-  assert.match(
-    ACTOR_SYSTEM_PROMPT,
-    /"type":"tool","call":\{"name":"navigate","arguments":\{"url":"\/math-calculator\.html"\}\}/,
-  );
+  assert.match(ACTOR_SYSTEM_PROMPT, /inspect_element/);
+  assert.match(ACTOR_SYSTEM_PROMPT, /inspect_dom/);
+  assert.match(ACTOR_SYSTEM_PROMPT, /Never invent or infer credentials/);
 
   const payload = JSON.parse(String(receivedMessages[1]?.content));
   assert.deepEqual(payload.context, {

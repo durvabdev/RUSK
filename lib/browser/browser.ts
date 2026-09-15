@@ -9,6 +9,34 @@ export type BrowserActionResult = {
   text?: string;
 };
 
+export type ElementInspection = {
+  tag: string | null;
+  role: string | null;
+  text: string | null;
+  ariaLabel: string | null;
+  name: string | null;
+  type: string | null;
+  href: string | null;
+  placeholder: string | null;
+  autocomplete: string | null;
+  contentEditable: boolean;
+  disabled: boolean;
+  readOnly: boolean;
+  value: string | null;
+  rect: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+};
+
+export type DomInspection = {
+  url: string;
+  title: string;
+  candidates: import("./dom-inspect").DomCandidate[];
+};
+
 export interface BrowserController {
   observe(): Promise<BrowserObservation>;
 
@@ -27,4 +55,10 @@ export interface BrowserController {
   goBack(): Promise<BrowserActionResult>;
 
   scroll(direction: "up" | "down"): Promise<BrowserActionResult>;
+
+  /** MCP-ref inspection via fixed browser_evaluate (no model-supplied JS). */
+  inspectElement(ref: string): Promise<ElementInspection>;
+
+  /** Compact DOM candidates via Playwright connectOverCDP. */
+  inspectDom(limit?: number): Promise<DomInspection>;
 }

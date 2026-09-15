@@ -10,12 +10,15 @@ import {
 import type { BrowserController } from "../browser/browser";
 import type { ToolRegistry } from "../tools/registry";
 
-import { AgentStateSchema, type AgentState,
+import {
+  AgentStateSchema,
+  type AgentState,
   type AgentStateUpdate,
 } from "./state";
 
 import { createObserveNode } from "./nodes/observe";
 import { createDecideNode } from "./nodes/decide";
+import { createGuardNode } from "./nodes/guard";
 import { createExecuteNode } from "./nodes/execute";
 
 const DEFAULT_MAX_STEPS = 15;
@@ -27,11 +30,14 @@ type CreateAgentGraphOptions = {
   maxSteps?: number;
 };
 
-type Route =
-  | "execute"
+type DecideRoute =
+  | "guard"
   | "finish"
   | "human"
-  | "max_steps";
+  | "max_steps"
+  | "observe";
+
+type GuardRoute = "human" | "execute";
 
 type HumanResume =
   | {
@@ -49,51 +55,48 @@ export function createAgentGraph({
 }: CreateAgentGraphOptions) {
   const observeNode = createObserveNode(browser);
   const decideNode = createDecideNode(model, registry);
+  const guardNode = createGuardNode(browser);
   const executeNode = createExecuteNode(registry);
 
-  function routeDecision(state: AgentState): Route {
+  function routeDecision(state: AgentState): DecideRoute {
     const decision = state.decision;
 
     if (!decision) {
-      throw new Error(
-        "cannot route agent state without a decision",
-      );
+      return "observe";
     }
 
-    switch (decision.type) {
-      case "tool":
-        if (state.stepCount >= maxSteps) {
-          return "max_steps";
-        }
-
-        return "execute";
-
-      case "finish":
-        return "finish";
-
-      case "human":
-        return "human";
-
-      default: {
-        const exhaustive: never = decision;
-
-        throw new Error(
-          `unknown agent decision: ${JSON.stringify(exhaustive)}`,
-        );
+    if (decision.type === "tool") {
+      if (state.stepCount >= maxSteps) {
+        return "max_steps";
       }
+      return "guard";
     }
+
+    if (decision.type === "human") {
+      return "human";
+    }
+
+    if (decision.type === "finish") {
+      return "finish";
+    }
+
+    return "observe";
   }
 
-  function finishNode(
-    state: AgentState,
-  ): AgentStateUpdate {
+  function routeGuard(state: AgentState): GuardRoute {
+    // Guard rewrites a blocked credential tool decision
+    // into decision.type === "human".
+    if (state.decision?.type === "human") {
+      return "human";
+    }
+    return "execute";
+  }
+
+  function finishNode(state: AgentState): AgentStateUpdate {
     if (state.decision?.type !== "finish") {
-      throw new Error(
-        "finish node received a non-finish decision",
-      );
+      throw new Error("finish node received a non-finish decision");
     }
 
-    // add verification later
     return {
       status: "success",
       humanRequest: null,
@@ -101,14 +104,9 @@ export function createAgentGraph({
     };
   }
 
-  function humanNode(
-    state: AgentState,
-  ): AgentStateUpdate {
-
+  function humanNode(state: AgentState): AgentStateUpdate {
     if (state.decision?.type !== "human") {
-      throw new Error(
-        "human node received a non-human decision",
-      );
+      throw new Error("human node received a non-human decision");
     }
 
     if (!state.decision.request) {
@@ -148,6 +146,7 @@ export function createAgentGraph({
   const builder = new StateGraph(AgentStateSchema)
     .addNode("observe", observeNode)
     .addNode("decide", decideNode)
+    .addNode("guard", guardNode)
     .addNode("execute", executeNode)
     .addNode("finish", finishNode)
     .addNode("human", humanNode)
@@ -156,26 +155,28 @@ export function createAgentGraph({
     .addEdge(START, "observe")
     .addEdge("observe", "decide")
 
-    .addConditionalEdges(
-      "decide",
-      routeDecision,
-      {
-        execute: "execute",
-        finish: "finish",
-        human: "human",
-        max_steps: "max_steps",
-      },
-    )
+    .addConditionalEdges("decide", routeDecision, {
+      guard: "guard",
+      human: "human",
+      finish: "finish",
+      max_steps: "max_steps",
+      observe: "observe",
+    })
+
+    .addConditionalEdges("guard", routeGuard, {
+      human: "human",
+      execute: "execute",
+    })
 
     .addEdge("execute", "observe")
 
-    // After the human resumes, always re-observe the live browser.
+    // Critical for HITL: after the human resumes, re-observe the live browser.
+    // Never replay the blocked credential action.
     .addEdge("human", "observe")
 
     .addEdge("finish", END)
     .addEdge("max_steps", END);
 
-  // interrupt() requires a checkpointer
   const checkpointer = new MemorySaver();
 
   return builder.compile({

@@ -71,6 +71,12 @@ Never invent:
 - approvals,
 - page state that is not present in the observation.
 
+Never invent or infer credentials.
+
+Task data such as member IDs, record IDs, account numbers, names, or search values are not authentication credentials unless the user explicitly states that they are credentials.
+
+If the current page requires authentication, request human credential entry instead of filling username, password, PIN, passcode, OTP, or verification fields.
+
 ELEMENT GROUNDING
 
 When interacting with page elements:
@@ -82,6 +88,9 @@ When interacting with page elements:
 - Consider the element's role, text, label, nearby content, and surrounding UI before deciding what it does.
 - Make sure the element belongs to the part of the page relevant to the user's goal.
 - Do not interact with an unrelated element simply because it accepts the requested action.
+- If a ref is ambiguous, or click/type fails, call inspect_element on that ref before retrying.
+- If the accessibility snapshot is too coarse (large containers, missing editability), call inspect_dom to list concrete candidates, then act with snapshot refs.
+- click/type still use snapshot refs; do not invent CSS selectors as refs.
 
 Example:
 If the snapshot contains a container whose descendants are "1", "2", "3", "+", and "=", and the next required action is "+", choose the ref corresponding specifically to "+" rather than the container containing the entire keypad.
@@ -212,10 +221,8 @@ export function createDecideNode(
   ): Promise<AgentStateUpdate> {
     const context = buildModelContext(state);
     
-    const HIDDEN_ACTOR_TOOLS = new Set([
-      "observe",
-      "navigate",
-    ]);
+    // observe is graph-owned; never expose to the actor catalog.
+    const HIDDEN_ACTOR_TOOLS = new Set(["observe"]);
 
     const tools = registry
     .list()
