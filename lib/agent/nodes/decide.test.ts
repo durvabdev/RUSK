@@ -1,0 +1,90 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
+import type { BaseMessage } from "@langchain/core/messages";
+import { z } from "zod";
+import type { ToolRegistry } from "../../tools/registry.ts";
+import { AgentDecisionSchema, type AgentDecision } from "../decision.ts";
+import type { AgentState } from "../state.ts";
+import { ACTOR_SYSTEM_PROMPT, createDecideNode } from "./decide.ts";
+
+test("decideNode returns only a structured decision", async () => {
+  const expected: AgentDecision = {
+    type: "tool",
+    call: { name: "click", arguments: { ref: "e14" } },
+  };
+  let receivedSchema: unknown;
+  let receivedMessages: BaseMessage[] = [];
+  let invokeCount = 0;
+
+  const model = {
+    withStructuredOutput(schema: unknown) {
+      receivedSchema = schema;
+      return {
+        async invoke(messages: BaseMessage[]) {
+          receivedMessages = messages;
+          return expected;
+        },
+      };
+    },
+  } as unknown as BaseChatModel;
+
+  const registry: ToolRegistry = {
+    list() {
+      return [
+        {
+          name: "click",
+          description: "Click an element.",
+          schema: z.object({ ref: z.string() }),
+          async execute() {
+            throw new Error("must not execute");
+          },
+        },
+      ];
+    },
+    async invoke() {
+      invokeCount += 1;
+      return { ok: true };
+    },
+  };
+
+  const state = {
+    runId: "run-1",
+    goal: "Open the account",
+    observation: {
+      url: "https://example.com",
+      title: "Example",
+      snapshot: '- button "Open" [ref=e14]',
+    },
+    history: [],
+    stepCount: 2,
+    status: "running",
+  } as unknown as AgentState;
+
+  const update = await createDecideNode(model, registry)(state);
+
+  assert.equal(receivedSchema, AgentDecisionSchema);
+  assert.equal(receivedMessages[0]?.content, ACTOR_SYSTEM_PROMPT);
+
+  const payload = JSON.parse(String(receivedMessages[1]?.content));
+  assert.deepEqual(payload.context, {
+    goal: "Open the account",
+    currentPage: {
+      url: "https://example.com",
+      title: "Example",
+      snapshot: '- button "Open" [ref=e14]',
+    },
+    recentActions: [],
+    step: 2,
+  });
+  assert.equal(payload.tools[0].name, "click");
+  assert.equal(payload.tools[0].description, "Click an element.");
+  assert.equal(payload.tools[0].parameters.type, "object");
+
+  assert.deepEqual(update, { decision: expected });
+  assert.equal(invokeCount, 0);
+  assert.equal("history" in update, false);
+  assert.equal("stepCount" in update, false);
+  assert.equal("observation" in update, false);
+  assert.equal("status" in update, false);
+});

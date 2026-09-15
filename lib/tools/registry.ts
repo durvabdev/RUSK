@@ -1,4 +1,4 @@
-import type { ToolCall, ToolDefinition, ToolResult } from "./types.ts";
+import type { ToolCall, ToolDefinition, ToolResult } from "./types";
 
 export type ToolRegistry = {
   invoke(call: ToolCall): Promise<ToolResult>;

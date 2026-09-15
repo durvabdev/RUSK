@@ -1,14 +1,14 @@
-import type { BrowserController } from "../../browser/browser.ts";
-import type { ToolDefinition } from "../types.ts";
-import { createClickTool } from "./click.ts";
-import { createGoBackTool } from "./go-back.ts";
-import { createHoverTool } from "./hover.ts";
-import { createNavigateTool } from "./navigate.ts";
-import { createObserveTool } from "./observe.ts";
-import { createPressKeyTool } from "./press-key.ts";
-import { createScrollTool } from "./scroll.ts";
-import { createSelectTool } from "./select.ts";
-import { createTypeTool } from "./type.ts";
+import type { BrowserController } from "../../browser/browser";
+import type { ToolDefinition } from "../types";
+import { createClickTool } from "./click";
+import { createGoBackTool } from "./go-back";
+import { createHoverTool } from "./hover";
+import { createNavigateTool } from "./navigate";
+import { createObserveTool } from "./observe";
+import { createPressKeyTool } from "./press-key";
+import { createScrollTool } from "./scroll";
+import { createSelectTool } from "./select";
+import { createTypeTool } from "./type";
 
 export function createBrowserTools(browser: BrowserController): ToolDefinition[] {
   return [

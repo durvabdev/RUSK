@@ -1,6 +1,6 @@
 import { z } from "zod";
-import type { BrowserController } from "../../browser/browser.ts";
-import type { ToolDefinition } from "../types.ts";
+import type { BrowserController } from "../../browser/browser";
+import type { ToolDefinition } from "../types";
 
 const schema = z.object({
   url: z.string(),

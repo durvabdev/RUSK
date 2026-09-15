@@ -1,5 +1,7 @@
 import { ReducedValue, StateSchema } from "@langchain/langgraph";
 import { z } from "zod";
+import { AgentDecisionSchema } from "./decision";
+import { HumanRequestSchema } from "./human-request";
 
 const BrowserObservationSchema = z.object({
   url: z.string().optional(),
@@ -25,13 +27,8 @@ export const AgentStepSchema = z.object({
   timestamp: z.number(),
 });
 
-export const HumanRequestSchema = z.object({
-  type: z.enum(["approval", "input", "choice", "credential"]),
-  message: z.string(),
-});
-
 export type AgentStep = z.infer<typeof AgentStepSchema>;
-export type HumanRequest = z.infer<typeof HumanRequestSchema>;
+export type { HumanRequest } from "./human-request";
 
 export const AgentStateSchema = new StateSchema({
   runId: z.string(),
@@ -48,6 +45,7 @@ export const AgentStateSchema = new StateSchema({
   status: z
     .enum(["running", "success", "failed", "waiting_for_human", "cancelled"])
     .default("running"),
+  decision: AgentDecisionSchema.optional(),
   humanRequest: HumanRequestSchema.nullable().optional(),
   error: z.string().nullable().optional(),
 });

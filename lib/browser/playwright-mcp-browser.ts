@@ -15,12 +15,56 @@ type G = typeof globalThis & {
 
 const g = globalThis as G;
 
-function toolText(result: { content: Array<{ type: string; text?: string }>; isError?: boolean }) {
-  const text = result.content
+function toolText(result: unknown) {
+  // #region agent log
+  fetch("http://127.0.0.1:7664/ingest/fd9e0927-3b2b-4655-99d8-b10f5823d4d8", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Debug-Session-Id": "ff1940",
+    },
+    body: JSON.stringify({
+      sessionId: "ff1940",
+      runId: "post-fix",
+      hypothesisId: "B",
+      location: "playwright-mcp-browser.ts:toolText",
+      message: "toolText input shape",
+      data: {
+        isObject: typeof result === "object" && result !== null,
+        hasContent:
+          typeof result === "object" &&
+          result !== null &&
+          "content" in result,
+        hasToolResult:
+          typeof result === "object" &&
+          result !== null &&
+          "toolResult" in result,
+        keys:
+          typeof result === "object" && result !== null
+            ? Object.keys(result as object).slice(0, 8)
+            : [],
+      },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
+  if (
+    typeof result !== "object" ||
+    result === null ||
+    !("content" in result) ||
+    !Array.isArray((result as { content: unknown }).content)
+  ) {
+    throw new Error("Playwright MCP returned an unexpected result shape");
+  }
+  const typed = result as {
+    content: Array<{ type: string; text?: string }>;
+    isError?: boolean;
+  };
+  const text = typed.content
     .filter((part) => part.type === "text" && part.text)
     .map((part) => part.text)
     .join("\n");
-  if (result.isError || !text) {
+  if (typed.isError || !text) {
     throw new Error(text || "Playwright MCP returned an empty result");
   }
   return text;
