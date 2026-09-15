@@ -1,7 +1,7 @@
 import { ReducedValue, StateSchema } from "@langchain/langgraph";
 import { z } from "zod";
 import { AgentDecisionSchema } from "./decision";
-import { HumanRequestSchema } from "./human-request";
+import { HumanRequestSchema } from "@/lib/agent/human-request";
 
 const BrowserObservationSchema = z.object({
   url: z.string().optional(),
@@ -28,7 +28,6 @@ export const AgentStepSchema = z.object({
 });
 
 export type AgentStep = z.infer<typeof AgentStepSchema>;
-export type { HumanRequest } from "./human-request";
 
 export const AgentStateSchema = new StateSchema({
   runId: z.string(),

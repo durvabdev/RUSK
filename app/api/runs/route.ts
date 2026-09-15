@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
-import { getBrowser } from "@/lib/browser/playwright-mcp-browser";
+
+import { getAgentRuntime } from "@/lib/agent/runtime";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  let body: { url?: unknown; goal?: unknown };
+  let body: {
+    url?: unknown;
+    goal?: unknown;
+  };
+
   try {
     body = await request.json();
   } catch {
@@ -14,8 +19,16 @@ export async function POST(request: Request) {
     );
   }
 
-  const url = typeof body.url === "string" ? body.url.trim() : "";
-  const goal = typeof body.goal === "string" ? body.goal.trim() : "";
+  const url =
+    typeof body.url === "string"
+      ? body.url.trim()
+      : "";
+
+  const goal =
+    typeof body.goal === "string"
+      ? body.goal.trim()
+      : "";
+
   if (!url || !goal) {
     return NextResponse.json(
       { error: "url and goal are required" },
@@ -25,7 +38,11 @@ export async function POST(request: Request) {
 
   try {
     const parsed = new URL(url);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+
+    if (
+      parsed.protocol !== "http:" &&
+      parsed.protocol !== "https:"
+    ) {
       throw new Error();
     }
   } catch {
@@ -35,20 +52,50 @@ export async function POST(request: Request) {
     );
   }
 
-  const id = crypto.randomUUID();
+  const runId = crypto.randomUUID();
+
   try {
-    const browser = getBrowser();
+    const { graph, browser } =
+      await getAgentRuntime();
+
     await browser.navigate(url);
-    const { snapshot } = await browser.observe();
+
+    const result = await graph.invoke(
+      {
+        runId,
+        goal,
+      },
+      {
+        configurable: {
+          thread_id: runId,
+        },
+      },
+    );
+
     return NextResponse.json(
-      { id, url, goal, status: "created", snapshot },
+      {
+        ...result,
+        runId,
+        url,
+        goal,
+      },
       { status: 201 },
     );
   } catch (err) {
-    const error = err instanceof Error ? err.message : String(err);
+    const error =
+      err instanceof Error
+        ? err.message
+        : String(err);
+
     return NextResponse.json(
-      { id, url, goal, status: "failed", error },
-      { status: 201 },
+      {
+        runId,
+        url,
+        goal,
+        status: "failed",
+        error,
+      },
+      { status: 500 },
     );
   }
 }

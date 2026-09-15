@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { HumanRequestSchema } from "./human-request";
+
+import { HumanRequestSchema } from "@/lib/agent/human-request";
 
 export const AgentDecisionSchema = z.discriminatedUnion("type", [
   z.object({
