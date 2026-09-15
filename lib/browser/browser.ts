@@ -21,4 +21,10 @@ export interface BrowserController {
   select(ref: string, value: string): Promise<BrowserActionResult>;
 
   pressKey(key: string): Promise<BrowserActionResult>;
+
+  hover(ref: string): Promise<BrowserActionResult>;
+
+  goBack(): Promise<BrowserActionResult>;
+
+  scroll(direction: "up" | "down"): Promise<BrowserActionResult>;
 }

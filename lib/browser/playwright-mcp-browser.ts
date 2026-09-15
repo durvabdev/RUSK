@@ -4,7 +4,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import type { BrowserActionResult, BrowserController, BrowserObservation } from "./browser";
 
 const mcpCli = path.join(process.cwd(), "node_modules", "@playwright", "mcp", "cli.js");
-const mcpArgs = [mcpCli, "--snapshot-mode", "none"];
+const mcpArgs = [mcpCli, "--snapshot-mode", "none", "--caps", "vision"];
 
 type G = typeof globalThis & {
   ruskMcp?: Promise<Client>;
@@ -157,6 +157,22 @@ export function getBrowser(): BrowserController {
 
     pressKey(key: string) {
       return withClient((client) => call(client, "browser_press_key", { key }));
+    },
+
+    hover(ref: string) {
+      return withClient((client) => call(client, "browser_hover", { target: ref }));
+    },
+
+    goBack() {
+      return withClient((client) => call(client, "browser_navigate_back", {}));
+    },
+
+    scroll(direction: "up" | "down") {
+      // ponytail: fixed ~1 viewport; expose pixels only if the agent needs finer control
+      const deltaY = direction === "down" ? 800 : -800;
+      return withClient((client) =>
+        call(client, "browser_mouse_wheel", { deltaX: 0, deltaY }),
+      );
     },
   };
 }
