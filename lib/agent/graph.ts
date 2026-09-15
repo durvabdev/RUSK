@@ -99,6 +99,7 @@ export function createAgentGraph({
 
     return {
       status: "success",
+      result: state.decision.reason,
       humanRequest: null,
       error: null,
     };

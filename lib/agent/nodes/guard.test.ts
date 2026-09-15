@@ -196,3 +196,29 @@ test("non-type tools pass through the guard", async () => {
 
   assert.deepEqual(update, {});
 });
+
+test("auth form + inspectElement failure still blocks credential typing", async () => {
+  const browser = {
+    async inspectDom() {
+      return {
+        url: "https://example.com/login",
+        title: "Login",
+        candidates: [
+          candidate({ name: "username", inputType: "text" }),
+          candidate({ name: "password", inputType: "password" }),
+        ],
+      };
+    },
+    async inspectElement() {
+      throw new Error("inspect_element returned invalid JSON");
+    },
+  } as unknown as BrowserController;
+
+  const update = await createGuardNode(browser)(
+    baseState({ name: "type", arguments: { ref: "e1", text: "002010" } }),
+  );
+
+  assert.equal(update.decision?.type, "human");
+  assert.equal(update.humanRequest?.type, "credential");
+  assert.equal("history" in update, false);
+});

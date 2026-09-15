@@ -281,17 +281,61 @@ function keyboardKey(character: string) {
   return character;
 }
 
-function parseInspectPayload(text: string): ElementInspection {
-  // browser_evaluate usually returns JSON text; tolerate fenced/noisy wrappers.
+/** First complete `{...}` object, ignoring markdown wrappers like `### Result`. */
+export function extractJsonObject(text: string): string | null {
   const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start === -1 || end === -1 || end < start) {
+  if (start === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < text.length; i += 1) {
+    const ch = text[i]!;
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === "{") {
+      depth += 1;
+      continue;
+    }
+    if (ch === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return text.slice(start, i + 1);
+      }
+    }
+  }
+
+  return null;
+}
+
+export function parseInspectPayload(text: string): ElementInspection {
+  const json = extractJsonObject(text);
+  if (!json) {
     throw new PlaywrightToolError(
       `inspect_element did not return JSON: ${text.slice(0, 200)}`,
     );
   }
   try {
-    return JSON.parse(text.slice(start, end + 1)) as ElementInspection;
+    return JSON.parse(json) as ElementInspection;
   } catch {
     throw new PlaywrightToolError(
       `inspect_element returned invalid JSON: ${text.slice(0, 200)}`,

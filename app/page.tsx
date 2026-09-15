@@ -3,10 +3,11 @@
 import { FormEvent, useEffect, useState } from "react";
 
 type Run = {
-  id: string;
+  runId: string;
   url: string;
   goal: string;
   status: string;
+  result?: string | null;
   snapshot?: string;
   error?: string;
 };
@@ -116,13 +117,19 @@ export default function Home() {
       {run ? (
         <div className="result">
           <p className="label">Run ID</p>
-          <p className="value">{run.id}</p>
+          <p className="value">{run.runId}</p>
           <p className="label">Status</p>
           <p className="value">{run.status}</p>
           <p className="label">Target URL</p>
           <p className="value">{run.url}</p>
           <p className="label">Goal</p>
           <p className="value">{run.goal}</p>
+          {run.result ? (
+            <>
+              <p className="label">Result</p>
+              <p className="value">{run.result}</p>
+            </>
+          ) : null}
           {run.error ? (
             <>
               <p className="label">Error</p>

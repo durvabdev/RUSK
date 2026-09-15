@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  extractJsonObject,
   navigateMcpCall,
+  parseInspectPayload,
   PlaywrightToolError,
 } from "./playwright-mcp-browser.ts";
 import { createRegistry } from "../tools/registry.ts";
@@ -19,6 +21,23 @@ test("PlaywrightToolError is identifiable for session preservation", () => {
   assert.equal(err.name, "PlaywrightToolError");
   assert.ok(err instanceof PlaywrightToolError);
   assert.ok(err instanceof Error);
+});
+
+test("parseInspectPayload handles ### Result wrappers and trailing braces", () => {
+  const text = `### Result
+{ "tag": "input", "role": null, "text": null, "ariaLabel": null, "name": "username", "type": "text", "href": null, "placeholder": null, "autocomplete": "username", "contentEditable": false, "disabled": false, "readOnly": false, "value": null, "rect": { "x": 1, "y": 2, "width": 3, "height": 4 } }
+### Ran Playwright code
+await page.evaluate(() => { return {}; });
+`;
+  const parsed = parseInspectPayload(text);
+  assert.equal(parsed.name, "username");
+  assert.equal(parsed.autocomplete, "username");
+  assert.equal(parsed.contentEditable, false);
+  assert.equal(parsed.rect.width, 3);
+
+  const extracted = extractJsonObject(text);
+  assert.ok(extracted?.startsWith("{"));
+  assert.ok(extracted?.endsWith("}"));
 });
 
 test("inspect_element tool returns registry ok:false on controller failure", async () => {

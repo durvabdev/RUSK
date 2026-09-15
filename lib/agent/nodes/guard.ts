@@ -45,7 +45,23 @@ export function createGuardNode(browser: BrowserController) {
       return {};
     }
 
-    const target = await browser.inspectElement(ref);
+    let target;
+    try {
+      target = await browser.inspectElement(ref);
+    } catch {
+      // Auth form already confirmed; don't let inspect parse noise unlock typing.
+      return {
+        decision: {
+          type: "human",
+          call: null,
+          reason: null,
+          request: CREDENTIAL_HUMAN_REQUEST,
+        },
+        humanRequest: CREDENTIAL_HUMAN_REQUEST,
+        status: "waiting_for_human",
+      };
+    }
+
     if (!isCredentialField(fromElementInspection(target))) {
       return {};
     }

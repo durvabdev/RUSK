@@ -45,6 +45,8 @@ export const AgentStateSchema = new StateSchema({
     .enum(["running", "success", "failed", "waiting_for_human", "cancelled"])
     .default("running"),
   decision: AgentDecisionStateSchema.optional(),
+  // The user-facing outcome supplied when the agent finishes successfully.
+  result: z.string().nullable().optional(),
   humanRequest: HumanRequestSchema.nullable().optional(),
   error: z.string().nullable().optional(),
 });
