@@ -8,7 +8,7 @@ const ibmPlexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Run Agent",
+  title: "RUSK",
 };
 
 export default function RootLayout({
@@ -17,7 +17,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `document.documentElement.dataset.theme=localStorage.getItem("theme")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark")`,
+          }}
+        />
+      </head>
       <body className={ibmPlexMono.className}>{children}</body>
     </html>
   );

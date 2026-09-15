@@ -1,36 +1,91 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 
 type Run = {
   id: string;
   url: string;
   goal: string;
   status: string;
+  snapshot?: string;
+  error?: string;
 };
 
 export default function Home() {
   const [targetUrl, setTargetUrl] = useState("");
   const [goal, setGoal] = useState("");
   const [run, setRun] = useState<Run | null>(null);
+  const [theme, setTheme] = useState<"light" | "dark">("dark");
+  const [formError, setFormError] = useState("");
+  const [running, setRunning] = useState(false);
+
+  useEffect(() => {
+    const current = document.documentElement.dataset.theme;
+    if (current === "light" || current === "dark") setTheme(current);
+  }, []);
+
+  function toggleTheme() {
+    const next = theme === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    localStorage.setItem("theme", next);
+    setTheme(next);
+  }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!targetUrl.trim() || !goal.trim()) return;
+    const url = targetUrl.trim();
+    const nextGoal = goal.trim();
+    if (!url && !nextGoal) {
+      setFormError("Enter a target URL and a goal.");
+      return;
+    }
+    if (!url) {
+      setFormError("Enter a target URL.");
+      return;
+    }
+    if (!nextGoal) {
+      setFormError("Enter a goal.");
+      return;
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      setFormError("Enter a valid http(s) URL.");
+      return;
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      setFormError("Enter a valid http(s) URL.");
+      return;
+    }
 
-    const res = await fetch("/api/runs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: targetUrl, goal }),
-    });
-    const data = await res.json();
-    if (!res.ok) return;
-    setRun(data);
+    setFormError("");
+    setRunning(true);
+    try {
+      const res = await fetch("/api/runs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, goal: nextGoal }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setFormError(data.error || `Request failed (${res.status})`);
+        return;
+      }
+      setRun(data);
+    } finally {
+      setRunning(false);
+    }
   }
 
   return (
     <main className="wrap">
-      <h1>Rusk</h1>
+      <div className="top">
+        <h1>RUSK</h1>
+        <button type="button" className="theme-toggle" onClick={toggleTheme}>
+          {theme === "dark" ? "LIGHT" : "DARK"}
+        </button>
+      </div>
       <form onSubmit={onSubmit}>
         <label htmlFor="target-url">Target URL</label>
         <input
@@ -48,19 +103,38 @@ export default function Home() {
           onChange={(e) => setGoal(e.target.value)}
         />
 
-        <button type="submit">Run Agent</button>
+        <button type="submit" disabled={running}>
+          {running ? "Running…" : "Run Agent"}
+        </button>
+        {formError ? (
+          <p className="form-error" role="alert">
+            {formError}
+          </p>
+        ) : null}
       </form>
 
       {run ? (
         <div className="result">
-          <p>Run ID:</p>
-          <p>{run.id}</p>
-          <p>Status:</p>
-          <p>{run.status}</p>
-          <p>Target URL:</p>
-          <p>{run.url}</p>
-          <p>Goal:</p>
-          <p>{run.goal}</p>
+          <p className="label">Run ID</p>
+          <p className="value">{run.id}</p>
+          <p className="label">Status</p>
+          <p className="value">{run.status}</p>
+          <p className="label">Target URL</p>
+          <p className="value">{run.url}</p>
+          <p className="label">Goal</p>
+          <p className="value">{run.goal}</p>
+          {run.error ? (
+            <>
+              <p className="label">Error</p>
+              <p className="value">{run.error}</p>
+            </>
+          ) : null}
+          {run.snapshot ? (
+            <>
+              <p className="label">Snapshot</p>
+              <pre className="snapshot">{run.snapshot}</pre>
+            </>
+          ) : null}
         </div>
       ) : null}
     </main>
