@@ -6,6 +6,11 @@ export function createObserveNode(browser: BrowserController) {
     _state: AgentState,
   ): Promise<AgentStateUpdate> {
     const observation = await browser.observe();
+    // console.log(
+    //   "[snapshot]",
+    //   observation.snapshot,
+    // );
+
     return { observation };
   };
 }

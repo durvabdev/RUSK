@@ -15,6 +15,14 @@ type G = typeof globalThis & {
 
 const g = globalThis as G;
 
+/** A tool-level rejection means the browser is still usable. */
+class PlaywrightToolError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PlaywrightToolError";
+  }
+}
+
 function toolText(result: unknown) {
   // #region agent log
   fetch("http://127.0.0.1:7664/ingest/fd9e0927-3b2b-4655-99d8-b10f5823d4d8", {
@@ -54,7 +62,9 @@ function toolText(result: unknown) {
     !("content" in result) ||
     !Array.isArray((result as { content: unknown }).content)
   ) {
-    throw new Error("Playwright MCP returned an unexpected result shape");
+    throw new PlaywrightToolError(
+      "Playwright MCP returned an unexpected result shape",
+    );
   }
   const typed = result as {
     content: Array<{ type: string; text?: string }>;
@@ -65,7 +75,9 @@ function toolText(result: unknown) {
     .map((part) => part.text)
     .join("\n");
   if (typed.isError || !text) {
-    throw new Error(text || "Playwright MCP returned an empty result");
+    throw new PlaywrightToolError(
+      text || "Playwright MCP returned an empty result",
+    );
   }
   return text;
 }
@@ -137,6 +149,15 @@ async function withClient<T>(fn: (client: Client) => Promise<T>): Promise<T> {
       return await fn(client);
     } catch (err) {
       console.error("[MCP] call failed", err);
+
+      // A Playwright action can be rejected while its browser and page remain
+      // healthy (for example, `fill` on Desmos's MathQuill content div). Keep
+      // that session alive so the following observation can use the current
+      // page instead of a newly launched, blank browser.
+      if (err instanceof PlaywrightToolError) {
+        throw err;
+      }
+
       g.ruskMcp = undefined;
       g.ruskHasWindow = false;
       try {
@@ -156,6 +177,12 @@ async function call(
 ): Promise<BrowserActionResult> {
   const text = toolText(await client.callTool({ name, arguments: args }));
   return { ok: true, text };
+}
+
+function keyboardKey(character: string) {
+  if (character === " ") return "Space";
+  if (character === "\n") return "Enter";
+  return character;
 }
 
 export function getBrowser(): BrowserController {
@@ -188,9 +215,27 @@ export function getBrowser(): BrowserController {
     },
 
     type(ref: string, text: string) {
-      return withClient((client) =>
-        call(client, "browser_type", { target: ref, text }),
-      );
+      return withClient(async (client) => {
+        try {
+          return await call(client, "browser_type", { target: ref, text });
+        } catch (err) {
+          if (!(err instanceof PlaywrightToolError)) throw err;
+
+          // Some rich editors (including MathQuill) expose an editable div
+          // but reject Playwright's fill-based `browser_type`. A click plus
+          // key events is the equivalent user interaction for those widgets.
+          await call(client, "browser_click", { target: ref });
+          for (const character of text) {
+            await call(client, "browser_press_key", {
+              key: keyboardKey(character),
+            });
+          }
+          return {
+            ok: true,
+            text: "Entered text with keyboard events after fill was rejected.",
+          };
+        }
+      });
     },
 
     select(ref: string, value: string) {

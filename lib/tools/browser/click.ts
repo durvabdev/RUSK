@@ -9,7 +9,7 @@ const schema = z.object({
 export function createClickTool(browser: BrowserController): ToolDefinition<z.infer<typeof schema>> {
   return {
     name: "click",
-    description: "Click an element identified by a browser ref.",
+    description: "Click a specific interactive control using its snapshot ref. Prefer this when the page exposes a button, link, tab, checkbox, or other explicit control that directly represents the intended action.",
     schema,
     execute: ({ ref }) => browser.click(ref),
   };

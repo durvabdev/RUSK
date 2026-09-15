@@ -1,6 +1,6 @@
 import { ReducedValue, StateSchema } from "@langchain/langgraph";
 import { z } from "zod";
-import { AgentDecisionSchema } from "./decision";
+import { AgentDecisionStateSchema } from "./decision";
 import { HumanRequestSchema } from "@/lib/agent/human-request";
 
 const BrowserObservationSchema = z.object({
@@ -44,7 +44,7 @@ export const AgentStateSchema = new StateSchema({
   status: z
     .enum(["running", "success", "failed", "waiting_for_human", "cancelled"])
     .default("running"),
-  decision: AgentDecisionSchema.optional(),
+  decision: AgentDecisionStateSchema.optional(),
   humanRequest: HumanRequestSchema.nullable().optional(),
   error: z.string().nullable().optional(),
 });

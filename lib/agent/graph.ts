@@ -18,7 +18,7 @@ import { createObserveNode } from "./nodes/observe";
 import { createDecideNode } from "./nodes/decide";
 import { createExecuteNode } from "./nodes/execute";
 
-const DEFAULT_MAX_STEPS = 30;
+const DEFAULT_MAX_STEPS = 15;
 
 type CreateAgentGraphOptions = {
   browser: BrowserController;

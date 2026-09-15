@@ -4,15 +4,19 @@ import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 import type { BaseMessage } from "@langchain/core/messages";
 import { z } from "zod";
 import type { ToolRegistry } from "../../tools/registry.ts";
-import { AgentDecisionSchema, type AgentDecision } from "../decision.ts";
+import {
+  AgentDecisionSchema,
+  type AgentDecision,
+} from "../decision.ts";
 import type { AgentState } from "../state.ts";
 import { ACTOR_SYSTEM_PROMPT, createDecideNode } from "./decide.ts";
 
 test("decideNode returns only a structured decision", async () => {
-  const expected: AgentDecision = {
+  const modelDecision = {
     type: "tool",
     call: { name: "click", arguments: { ref: "e14" } },
   };
+  const expected: AgentDecision = { ...modelDecision, reason: null, request: null };
   let receivedSchema: unknown;
   let receivedMessages: BaseMessage[] = [];
   let invokeCount = 0;
@@ -23,7 +27,7 @@ test("decideNode returns only a structured decision", async () => {
       return {
         async invoke(messages: BaseMessage[]) {
           receivedMessages = messages;
-          return expected;
+          return modelDecision;
         },
       };
     },
@@ -65,6 +69,14 @@ test("decideNode returns only a structured decision", async () => {
 
   assert.equal(receivedSchema, AgentDecisionSchema);
   assert.equal(receivedMessages[0]?.content, ACTOR_SYSTEM_PROMPT);
+  assert.match(
+    ACTOR_SYSTEM_PROMPT,
+    /Never return a browser tool name such as "navigate", "click", or "type" as\n+the top-level type/,
+  );
+  assert.match(
+    ACTOR_SYSTEM_PROMPT,
+    /"type":"tool","call":\{"name":"navigate","arguments":\{"url":"\/math-calculator\.html"\}\}/,
+  );
 
   const payload = JSON.parse(String(receivedMessages[1]?.content));
   assert.deepEqual(payload.context, {
@@ -80,6 +92,9 @@ test("decideNode returns only a structured decision", async () => {
   assert.equal(payload.tools[0].name, "click");
   assert.equal(payload.tools[0].description, "Click an element.");
   assert.equal(payload.tools[0].parameters.type, "object");
+
+  const jsonSchema = z.toJSONSchema(AgentDecisionSchema);
+  assert.deepEqual(jsonSchema.required, ["type"]);
 
   assert.deepEqual(update, { decision: expected });
   assert.equal(invokeCount, 0);

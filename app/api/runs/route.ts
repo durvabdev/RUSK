@@ -69,6 +69,12 @@ export async function POST(request: Request) {
         configurable: {
           thread_id: runId,
         },
+        runName: "rusk-agent-run",
+        tags: ["rusk", "browser-agent"],
+        metadata: {
+          runId,
+          targetUrl: url,
+        },
       },
     );
 

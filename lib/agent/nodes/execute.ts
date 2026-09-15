@@ -15,17 +15,26 @@ export function createExecuteNode(registry: ToolRegistry) {
       throw new Error("execute node called without a decision");
     }
 
-    if (decision.type !== "tool") {
+    if (decision.type !== "tool" || !decision.call) {
       throw new Error(
         `execute node received non-tool decision: ${decision.type}`,
       );
     }
 
-    const toolResult = await registry.invoke(decision.call);
+    const toolCall = {
+      name: decision.call.name,
+      arguments: decision.call.arguments,
+    };
+    const toolResult = await registry.invoke(toolCall);
+
+    console.log(
+      "[tool result]",
+      JSON.stringify(toolResult, null, 2),
+    );
 
     const step: AgentStep = {
       step: state.stepCount + 1,
-      toolCall: decision.call,
+      toolCall,
       toolResult,
       timestamp: Date.now(),
     };
