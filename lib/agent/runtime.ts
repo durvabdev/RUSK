@@ -2,6 +2,7 @@ import type { BrowserController } from "../browser/browser";
 import { ChatOpenAI } from "@langchain/openai";
 import { ensureChromium } from "../browser/chromium";
 import { getBrowser } from "../browser/playwright-mcp-browser";
+import { createArtifactRepository } from "../artifacts/repository";
 import { createBrowserTools } from "../tools/browser";
 import { createRegistry } from "../tools/registry";
 import { createAgentGraph } from "./graph";
@@ -39,7 +40,13 @@ async function createRuntime(): Promise<AgentRuntime> {
   });
 
   const registry = createRegistry(createBrowserTools(browser));
-  const graph = createAgentGraph({ browser, model, registry });
+  const artifactRepository = createArtifactRepository();
+  const graph = createAgentGraph({
+    browser,
+    model,
+    registry,
+    artifactRepository,
+  });
 
   return { graph, browser };
 }

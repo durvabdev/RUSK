@@ -1,6 +1,8 @@
 import { z } from "zod";
 
-export const ReplayTargetSchema = z.object({
+/** Facts captured during a recorded run. Not authoritative for replay. */
+export const RecordedTargetSchema = z.object({
+  ref: z.string().optional(),
   testId: z.string().optional(),
   role: z.string().optional(),
   name: z.string().optional(),
@@ -10,7 +12,7 @@ export const ReplayTargetSchema = z.object({
   id: z.string().optional(),
 });
 
-export type ReplayTarget = z.infer<typeof ReplayTargetSchema>;
+export type RecordedTarget = z.infer<typeof RecordedTargetSchema>;
 
 export const ArtifactValueSchema = z.discriminatedUnion("source", [
   z.object({
@@ -24,6 +26,27 @@ export const ArtifactValueSchema = z.discriminatedUnion("source", [
 ]);
 
 export type ArtifactValue = z.infer<typeof ArtifactValueSchema>;
+
+export const ReplayScopeSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("matching_container"),
+    value: ArtifactValueSchema,
+  }),
+]);
+
+export type ReplayScope = z.infer<typeof ReplayScopeSchema>;
+
+/** Generalized replay contract. No dynamic href/id as matchers. */
+export const ReplayTargetSchema = z.object({
+  testId: z.string().optional(),
+  role: z.string().optional(),
+  name: z.string().optional(),
+  text: z.string().optional(),
+  placeholder: z.string().optional(),
+  within: ReplayScopeSchema.optional(),
+});
+
+export type ReplayTarget = z.infer<typeof ReplayTargetSchema>;
 
 const ReplayStepNavigateSchema = z.object({
   action: z.literal("navigate"),

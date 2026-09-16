@@ -9,6 +9,7 @@ import {
 
 import type { BrowserController } from "../browser/browser";
 import type { ToolRegistry } from "../tools/registry";
+import type { ArtifactRepository } from "../artifacts/repository";
 
 import {
   AgentStateSchema,
@@ -20,6 +21,7 @@ import { createObserveNode } from "./nodes/observe";
 import { createDecideNode } from "./nodes/decide";
 import { createGuardNode } from "./nodes/guard";
 import { createExecuteNode } from "./nodes/execute";
+import { createCompileArtifactNode } from "./nodes/compile-artifact";
 
 const DEFAULT_MAX_STEPS = 15;
 
@@ -27,6 +29,7 @@ type CreateAgentGraphOptions = {
   browser: BrowserController;
   model: BaseChatModel;
   registry: ToolRegistry;
+  artifactRepository: ArtifactRepository;
   maxSteps?: number;
 };
 
@@ -51,12 +54,14 @@ export function createAgentGraph({
   browser,
   model,
   registry,
+  artifactRepository,
   maxSteps = DEFAULT_MAX_STEPS,
 }: CreateAgentGraphOptions) {
   const observeNode = createObserveNode(browser);
   const decideNode = createDecideNode(model, registry);
   const guardNode = createGuardNode(browser);
   const executeNode = createExecuteNode(registry, browser);
+  const compileArtifactNode = createCompileArtifactNode(artifactRepository);
 
   function routeDecision(state: AgentState): DecideRoute {
     const decision = state.decision;
@@ -150,6 +155,7 @@ export function createAgentGraph({
     .addNode("guard", guardNode)
     .addNode("execute", executeNode)
     .addNode("finish", finishNode)
+    .addNode("compile_artifact", compileArtifactNode)
     .addNode("human", humanNode)
     .addNode("max_steps", maxStepsNode)
 
@@ -175,7 +181,8 @@ export function createAgentGraph({
     // Never replay the blocked credential action.
     .addEdge("human", "observe")
 
-    .addEdge("finish", END)
+    .addEdge("finish", "compile_artifact")
+    .addEdge("compile_artifact", END)
     .addEdge("max_steps", END);
 
   const checkpointer = new MemorySaver();

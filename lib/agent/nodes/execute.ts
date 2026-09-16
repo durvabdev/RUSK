@@ -1,8 +1,10 @@
-import type { BrowserController } from "../../browser/browser";
+import type {
+  BrowserController,
+  ElementInspection,
+} from "../../browser/browser";
 import type { ToolRegistry } from "../../tools/registry";
-import { replayTargetFromInspection } from "../../artifacts/replay-target";
 import { parseSnapshotCandidates } from "../../artifacts/snapshot-parser";
-import type { ReplayTarget } from "../../artifacts/schema";
+import type { RecordedTarget } from "../../artifacts/schema";
 import type {
   AgentState,
   AgentStateUpdate,
@@ -19,18 +21,47 @@ function toolRef(args: unknown): string | null {
   return typeof ref === "string" && ref.length > 0 ? ref : null;
 }
 
-function replayTargetFromSnapshot(
+/** Map inspectElement metadata to recorded facts (no replay semantics). */
+function recordedTargetFromInspection(
+  element: ElementInspection,
+  ref?: string,
+): RecordedTarget | null {
+  const target: RecordedTarget = {};
+
+  if (ref) target.ref = ref;
+  if (element.testId) target.testId = element.testId;
+  if (element.role) target.role = element.role;
+  if (element.name) target.name = element.name;
+  else if (element.ariaLabel) target.name = element.ariaLabel;
+  else if (element.text) target.text = element.text;
+  if (element.placeholder) target.placeholder = element.placeholder;
+  if (element.href) target.href = element.href;
+
+  const hasSignal =
+    target.testId ||
+    target.role ||
+    target.name ||
+    target.text ||
+    target.placeholder ||
+    target.href ||
+    target.id ||
+    target.ref;
+
+  return hasSignal ? target : null;
+}
+
+function recordedTargetFromSnapshot(
   snapshot: string | undefined,
   ref: string,
-): ReplayTarget | undefined {
+): RecordedTarget | undefined {
   if (!snapshot) return undefined;
   const candidate = parseSnapshotCandidates(snapshot).find((c) => c.ref === ref);
   if (!candidate) return undefined;
-  const target: ReplayTarget = {};
+  const target: RecordedTarget = { ref };
   if (candidate.role) target.role = candidate.role;
   if (candidate.name) target.name = candidate.name;
   if (candidate.href) target.href = candidate.href;
-  return Object.keys(target).length > 0 ? target : undefined;
+  return Object.keys(target).length > 1 ? target : { ref };
 }
 
 export function createExecuteNode(
@@ -57,18 +88,19 @@ export function createExecuteNode(
       arguments: decision.call.arguments,
     };
 
-    // Capture while the MCP ref is still valid (before the action mutates the page).
-    let replayTarget: AgentStep["replayTarget"];
+    // Capture facts while the MCP ref is still valid (before the action mutates the page).
+    let recordedTarget: AgentStep["recordedTarget"];
     const ref = toolRef(toolCall.arguments);
     if (CAPTURE_TOOLS.has(toolCall.name) && ref) {
       try {
         const inspection = await browser.inspectElement(ref);
-        replayTarget = replayTargetFromInspection(inspection) ?? undefined;
+        recordedTarget =
+          recordedTargetFromInspection(inspection, ref) ?? undefined;
       } catch {
         /* fall through to snapshot */
       }
-      if (!replayTarget) {
-        replayTarget = replayTargetFromSnapshot(
+      if (!recordedTarget) {
+        recordedTarget = recordedTargetFromSnapshot(
           state.observation?.snapshot,
           ref,
         );
@@ -81,7 +113,7 @@ export function createExecuteNode(
       step: state.stepCount + 1,
       toolCall,
       toolResult,
-      ...(toolResult.ok && replayTarget ? { replayTarget } : {}),
+      ...(toolResult.ok && recordedTarget ? { recordedTarget } : {}),
       timestamp: Date.now(),
     };
 

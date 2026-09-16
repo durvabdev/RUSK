@@ -2,7 +2,7 @@ import { ReducedValue, StateSchema } from "@langchain/langgraph";
 import { z } from "zod";
 import { AgentDecisionStateSchema } from "./decision";
 import { HumanRequestSchema } from "@/lib/agent/human-request";
-import { ReplayTargetSchema } from "@/lib/artifacts/schema";
+import { RecordedTargetSchema } from "@/lib/artifacts/schema";
 
 /**
  * Compact CDP semantics for perception. They deliberately carry no MCP ref or
@@ -48,7 +48,7 @@ export const AgentStepSchema = z.object({
   step: z.number(),
   toolCall: ToolCallSchema,
   toolResult: ToolResultSchema,
-  replayTarget: ReplayTargetSchema.optional(),
+  recordedTarget: RecordedTargetSchema.optional(),
   timestamp: z.number(),
 });
 
@@ -59,6 +59,7 @@ export const AgentStateSchema = new StateSchema({
   goal: z.string(),
   startUrl: z.string().default(""),
   authRequired: z.boolean().default(false),
+  recordArtifact: z.boolean().default(true),
   observation: BrowserObservationSchema.optional(),
   history: new ReducedValue(z.array(AgentStepSchema).default(() => []), {
     inputSchema: AgentStepSchema,
@@ -76,6 +77,8 @@ export const AgentStateSchema = new StateSchema({
   result: z.string().nullable().optional(),
   humanRequest: HumanRequestSchema.nullable().optional(),
   error: z.string().nullable().optional(),
+  artifactId: z.string().optional(),
+  artifactError: z.string().optional(),
 });
 
 export type AgentState = typeof AgentStateSchema.State;
