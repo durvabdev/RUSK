@@ -3,10 +3,33 @@ import { z } from "zod";
 import { AgentDecisionStateSchema } from "./decision";
 import { HumanRequestSchema } from "@/lib/agent/human-request";
 
-const BrowserObservationSchema = z.object({
+/**
+ * Compact CDP semantics for perception. They deliberately carry no MCP ref or
+ * selector: refs remain grounded only in the accessibility snapshot.
+ */
+export const ObservedElementSchema = z.object({
+  tag: z.string(),
+  role: z.string().nullable(),
+  text: z.string().nullable(),
+  ariaLabel: z.string().nullable(),
+  name: z.string().nullable(),
+  inputType: z.string().nullable(),
+  href: z.string().nullable(),
+  placeholder: z.string().nullable(),
+  contentEditable: z.boolean(),
+  disabled: z.boolean(),
+  readOnly: z.boolean(),
+  value: z.string().nullable(),
+  visible: z.boolean(),
+});
+
+export type ObservedElement = z.infer<typeof ObservedElementSchema>;
+
+export const BrowserObservationSchema = z.object({
   url: z.string().optional(),
   title: z.string().optional(),
   snapshot: z.string(),
+  elements: z.array(ObservedElementSchema).default(() => []),
 });
 
 const ToolCallSchema = z.object({
@@ -62,6 +85,7 @@ export function buildModelContext(state: AgentState) {
       url: state.observation?.url,
       title: state.observation?.title,
       snapshot: state.observation?.snapshot,
+      elements: state.observation?.elements ?? [],
     },
 
     recentActions: state.history.slice(-5).map((step) => ({

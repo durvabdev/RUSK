@@ -180,24 +180,56 @@ async function getClient() {
 }
 
 async function getCdpBrowser(): Promise<Browser> {
-  if (!g.ruskCdpBrowser) {
-    g.ruskCdpBrowser = (async () => {
-      const { cdpEndpoint } = await ensureChromium();
-      console.log("[cdp] connectOverCDP", cdpEndpoint);
-      return chromium.connectOverCDP(cdpEndpoint);
-    })().catch((err) => {
+  const existing = g.ruskCdpBrowser;
+  if (existing) {
+    try {
+      const browser = await existing;
+      if (browser.isConnected()) return browser;
+    } catch {
+      // A failed connection promise is replaced below.
+    }
+
+    if (g.ruskCdpBrowser === existing) {
       g.ruskCdpBrowser = undefined;
-      throw err;
-    });
+    } else {
+      // Another caller replaced the stale connection while this caller waited.
+      return getCdpBrowser();
+    }
   }
-  return g.ruskCdpBrowser;
+
+  let connectionPromise: Promise<Browser>;
+  connectionPromise = (async () => {
+    const { cdpEndpoint } = await ensureChromium();
+    console.log("[cdp] connectOverCDP", cdpEndpoint);
+    const browser = await chromium.connectOverCDP(cdpEndpoint);
+
+    browser.once("disconnected", () => {
+      if (g.ruskCdpBrowser === connectionPromise) {
+        console.log("[cdp] disconnected; clearing cached connection");
+        g.ruskCdpBrowser = undefined;
+      }
+    });
+
+    return browser;
+  })().catch((err) => {
+    if (g.ruskCdpBrowser === connectionPromise) {
+      g.ruskCdpBrowser = undefined;
+    }
+    throw err;
+  });
+
+  g.ruskCdpBrowser = connectionPromise;
+  return connectionPromise;
 }
 
-export function pickActivePage(
-  browser: Browser,
+function getCdpPages(browser: Browser): Page[] {
+  return browser.contexts().flatMap((context) => context.pages());
+}
+
+function pickActivePageFromPages(
+  pages: Page[],
   preferredUrl?: string,
 ): Page {
-  const pages = browser.contexts().flatMap((context) => context.pages());
   if (pages.length === 0) {
     throw new PlaywrightToolError("No pages available on CDP browser");
   }
@@ -220,6 +252,40 @@ export function pickActivePage(
     return real[real.length - 1]!;
   }
   return pages[pages.length - 1]!;
+}
+
+export function pickActivePage(
+  browser: Browser,
+  preferredUrl?: string,
+): Page {
+  return pickActivePageFromPages(getCdpPages(browser), preferredUrl);
+}
+
+const PAGE_RETRY_COUNT = 3;
+const PAGE_RETRY_DELAY_MS = 100;
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+export async function getActiveCdpPage(preferredUrl?: string): Promise<Page> {
+  for (let attempt = 0; attempt < PAGE_RETRY_COUNT; attempt += 1) {
+    const browser = await getCdpBrowser();
+
+    if (browser.isConnected()) {
+      const pages = getCdpPages(browser);
+      if (pages.length > 0) {
+        return pickActivePageFromPages(pages, preferredUrl);
+      }
+    }
+
+    if (attempt < PAGE_RETRY_COUNT - 1) {
+      console.warn("[cdp] no pages yet; retrying", { attempt: attempt + 1 });
+      await sleep(PAGE_RETRY_DELAY_MS);
+    }
+  }
+
+  throw new PlaywrightToolError("No pages available on CDP browser");
 }
 
 function withLock<T>(fn: () => Promise<T>) {
@@ -246,19 +312,11 @@ async function withClient<T>(fn: (client: Client) => Promise<T>): Promise<T> {
       }
 
       g.ruskMcp = undefined;
-      const cdp = g.ruskCdpBrowser;
       g.ruskCdpBrowser = undefined;
       try {
         await client.close();
       } catch {
         /* already dead */
-      }
-      if (cdp) {
-        try {
-          await (await cdp).close();
-        } catch {
-          /* already dead */
-        }
       }
       // Keep RUSK-owned Chromium alive; next call reconnects MCP/CDP to it.
       throw err;
@@ -346,7 +404,7 @@ export function parseInspectPayload(text: string): ElementInspection {
 export function getBrowser(): BrowserController {
   return {
     async observe(): Promise<BrowserObservation> {
-      return withClient(async (client) => {
+      const snapshotObservation = await withClient(async (client) => {
         console.log("[MCP] taking snapshot");
         const snapshot = toolText(
           await client.callTool({ name: "browser_snapshot", arguments: {} }),
@@ -356,6 +414,17 @@ export function getBrowser(): BrowserController {
         if (meta.url) g.ruskLastPageUrl = meta.url;
         return { snapshot, ...meta };
       });
+
+      // CDP semantics are normal perception, while the MCP snapshot remains
+      // the independent source of action refs. Do not derive refs from these
+      // candidates or expose their selectors to the actor.
+      const inspection = await this.inspectDom();
+      return {
+        ...snapshotObservation,
+        elements: inspection.candidates.map(
+          ({ rect: _rect, selector: _selector, ...element }) => element,
+        ),
+      };
     },
 
     async navigate(url: string): Promise<BrowserActionResult> {
@@ -452,8 +521,7 @@ export function getBrowser(): BrowserController {
       return withLock(async () => {
         // Ensure MCP/Chromium are up so a page exists, then inspect via CDP.
         await getClient();
-        const browser = await getCdpBrowser();
-        const page = pickActivePage(browser, g.ruskLastPageUrl);
+        const page = await getActiveCdpPage(g.ruskLastPageUrl);
         const candidates = await evaluateDomCandidates(page, limit);
         g.ruskLastPageUrl = page.url();
         return {

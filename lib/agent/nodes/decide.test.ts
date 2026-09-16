@@ -12,6 +12,23 @@ import type { AgentState } from "../state.ts";
 import { ACTOR_SYSTEM_PROMPT, createDecideNode } from "./decide.ts";
 
 test("decideNode returns only a structured decision", async () => {
+  const elements = [
+    {
+      tag: "button",
+      role: "button",
+      text: "Open",
+      ariaLabel: null,
+      name: null,
+      inputType: null,
+      href: null,
+      placeholder: null,
+      contentEditable: false,
+      disabled: false,
+      readOnly: false,
+      value: null,
+      visible: true,
+    },
+  ];
   const modelDecision = {
     type: "tool",
     call: { name: "click", arguments: { ref: "e14" } },
@@ -59,6 +76,7 @@ test("decideNode returns only a structured decision", async () => {
       url: "https://example.com",
       title: "Example",
       snapshot: '- button "Open" [ref=e14]',
+      elements,
     },
     history: [],
     stepCount: 2,
@@ -84,6 +102,7 @@ test("decideNode returns only a structured decision", async () => {
       url: "https://example.com",
       title: "Example",
       snapshot: '- button "Open" [ref=e14]',
+      elements,
     },
     recentActions: [],
     step: 2,
