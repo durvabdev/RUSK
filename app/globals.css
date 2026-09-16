@@ -178,6 +178,104 @@ button:disabled {
   color: var(--accent);
 }
 
+.section-title {
+  margin: 0 0 0.75rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.section-rule {
+  margin: 0 0 1.25rem;
+  border: none;
+  border-top: 1px solid var(--line);
+}
+
+.muted {
+  margin: 0 0 1.5rem;
+  color: var(--muted);
+}
+
+.workflows {
+  margin-bottom: 1.75rem;
+}
+
+.workflow-list {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+}
+
+.workflow-item {
+  margin-bottom: 0.35rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.workflow-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  margin: 0;
+  padding: 0.7rem 0;
+  text-align: left;
+  background: transparent;
+  color: var(--fg);
+  border: none;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  font-size: 1rem;
+}
+
+.workflow-toggle:hover {
+  background: transparent;
+  color: var(--accent);
+}
+
+.workflow-chevron {
+  color: var(--accent);
+  width: 1rem;
+}
+
+.workflow-panel {
+  padding: 0 0 1.25rem 1.65rem;
+}
+
+.replay-result {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.replay-result .label {
+  margin: 0 0 0.5rem;
+  font-size: 0.82rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.replay-result .value {
+  margin: 0 0 1rem;
+  color: var(--muted);
+}
+
+.new-workflow {
+  display: block;
+  margin-bottom: 2rem;
+  background: transparent;
+  color: var(--fg);
+  border-color: var(--border);
+}
+
+.new-workflow:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 @media (max-width: 640px) {
   .wrap {
     padding: 3rem 1.25rem;

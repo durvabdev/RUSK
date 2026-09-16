@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 type Run = {
   runId: string;
@@ -14,6 +14,46 @@ type Run = {
   artifactError?: string;
 };
 
+type ArtifactInputDef = {
+  type: "string";
+  required: boolean;
+  description?: string;
+};
+
+type ArtifactSummary = {
+  id: string;
+  name: string;
+  description: string;
+  startUrl: string;
+  inputs: Record<string, ArtifactInputDef>;
+};
+
+type ArtifactRunResult =
+  | { status: "success"; outputs: Record<string, string> }
+  | { status: "failed"; error: string; code: string };
+
+function originOf(url: string): string | null {
+  try {
+    const parsed = new URL(url.trim());
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    return parsed.origin;
+  } catch {
+    return null;
+  }
+}
+
+function humanizeKey(key: string): string {
+  const words = key.split("_").filter(Boolean);
+  if (words.length === 0) return key;
+  return words
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function displayName(artifact: ArtifactSummary): string {
+  return humanizeKey(artifact.name);
+}
+
 export default function Home() {
   const [targetUrl, setTargetUrl] = useState("");
   const [goal, setGoal] = useState("");
@@ -22,16 +62,141 @@ export default function Home() {
   const [formError, setFormError] = useState("");
   const [running, setRunning] = useState(false);
 
+  const [allArtifacts, setAllArtifacts] = useState<ArtifactSummary[]>([]);
+  const [artifactsLoading, setArtifactsLoading] = useState(false);
+  const [artifactsError, setArtifactsError] = useState("");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [inputValues, setInputValues] = useState<Record<string, string>>({});
+  const [replayRunningId, setReplayRunningId] = useState<string | null>(null);
+  const [replayResults, setReplayResults] = useState<
+    Record<string, ArtifactRunResult>
+  >({});
+
+  const siteOrigin = useMemo(() => originOf(targetUrl), [targetUrl]);
+
+  const siteArtifacts = useMemo(() => {
+    if (!siteOrigin) return [];
+    return allArtifacts.filter((a) => originOf(a.startUrl) === siteOrigin);
+  }, [allArtifacts, siteOrigin]);
+
+  const loadArtifacts = useCallback(async () => {
+    setArtifactsLoading(true);
+    setArtifactsError("");
+    try {
+      const res = await fetch("/api/artifacts");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setArtifactsError(data.error || `Failed to load artifacts (${res.status})`);
+        return;
+      }
+      setAllArtifacts(
+        Array.isArray(data.artifacts) ? (data.artifacts as ArtifactSummary[]) : [],
+      );
+    } catch (err) {
+      setArtifactsError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setArtifactsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     const current = document.documentElement.dataset.theme;
     if (current === "light" || current === "dark") setTheme(current);
   }, []);
+
+  useEffect(() => {
+    void loadArtifacts();
+  }, [loadArtifacts]);
 
   function toggleTheme() {
     const next = theme === "dark" ? "light" : "dark";
     document.documentElement.dataset.theme = next;
     localStorage.setItem("theme", next);
     setTheme(next);
+  }
+
+  function toggleArtifact(artifact: ArtifactSummary) {
+    if (expandedId === artifact.id) {
+      setExpandedId(null);
+      return;
+    }
+    setExpandedId(artifact.id);
+    setInputValues((prev) => {
+      const next = { ...prev };
+      for (const key of Object.keys(artifact.inputs)) {
+        if (!(key in next)) next[key] = "";
+      }
+      return next;
+    });
+  }
+
+  async function onRunWorkflow(artifact: ArtifactSummary) {
+    const inputs: Record<string, string> = {};
+    for (const [key, def] of Object.entries(artifact.inputs)) {
+      const value = (inputValues[key] ?? "").trim();
+      if (def.required && !value) {
+        setReplayResults((prev) => ({
+          ...prev,
+          [artifact.id]: {
+            status: "failed",
+            error: `Missing required input: ${key}`,
+            code: "input_invalid",
+          },
+        }));
+        return;
+      }
+      inputs[key] = value;
+    }
+
+    setReplayRunningId(artifact.id);
+    try {
+      const res = await fetch(`/api/artifacts/${artifact.id}/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ inputs }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        status?: string;
+        outputs?: Record<string, string>;
+        error?: string;
+        code?: string;
+      };
+      if (data.status === "success" && data.outputs) {
+        setReplayResults((prev) => ({
+          ...prev,
+          [artifact.id]: { status: "success", outputs: data.outputs! },
+        }));
+      } else if (data.status === "failed") {
+        setReplayResults((prev) => ({
+          ...prev,
+          [artifact.id]: {
+            status: "failed",
+            error: data.error || "Replay failed",
+            code: data.code || "step_failed",
+          },
+        }));
+      } else {
+        setReplayResults((prev) => ({
+          ...prev,
+          [artifact.id]: {
+            status: "failed",
+            error: data.error || `Request failed (${res.status})`,
+            code: "step_failed",
+          },
+        }));
+      }
+    } catch (err) {
+      setReplayResults((prev) => ({
+        ...prev,
+        [artifact.id]: {
+          status: "failed",
+          error: err instanceof Error ? err.message : String(err),
+          code: "step_failed",
+        },
+      }));
+    } finally {
+      setReplayRunningId(null);
+    }
   }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -50,14 +215,7 @@ export default function Home() {
       setFormError("Enter a goal.");
       return;
     }
-    let parsed: URL;
-    try {
-      parsed = new URL(url);
-    } catch {
-      setFormError("Enter a valid http(s) URL.");
-      return;
-    }
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    if (!originOf(url)) {
       setFormError("Enter a valid http(s) URL.");
       return;
     }
@@ -76,9 +234,16 @@ export default function Home() {
         return;
       }
       setRun(data);
+      if (data.artifactId) {
+        await loadArtifacts();
+      }
     } finally {
       setRunning(false);
     }
+  }
+
+  function focusNewWorkflow() {
+    document.getElementById("goal")?.focus();
   }
 
   return (
@@ -89,15 +254,119 @@ export default function Home() {
           {theme === "dark" ? "LIGHT" : "DARK"}
         </button>
       </div>
-      <form onSubmit={onSubmit}>
-        <label htmlFor="target-url">Target URL</label>
-        <input
-          id="target-url"
-          type="text"
-          value={targetUrl}
-          onChange={(e) => setTargetUrl(e.target.value)}
-        />
 
+      <label htmlFor="target-url">URL</label>
+      <input
+        id="target-url"
+        type="text"
+        value={targetUrl}
+        onChange={(e) => setTargetUrl(e.target.value)}
+        placeholder="https://example.com/"
+      />
+
+      <section className="workflows">
+        <h2 className="section-title">Existing workflows for this site</h2>
+        <hr className="section-rule" />
+
+        {!targetUrl.trim() ? (
+          <p className="muted">Enter a URL to see saved workflows.</p>
+        ) : !siteOrigin ? (
+          <p className="form-error" role="alert">
+            Enter a valid http(s) URL.
+          </p>
+        ) : artifactsLoading ? (
+          <p className="muted">Loading workflows…</p>
+        ) : artifactsError ? (
+          <p className="form-error" role="alert">
+            {artifactsError}
+          </p>
+        ) : siteArtifacts.length === 0 ? (
+          <p className="muted">No saved workflows for this site yet.</p>
+        ) : (
+          <ul className="workflow-list">
+            {siteArtifacts.map((artifact) => {
+              const open = expandedId === artifact.id;
+              const replay = replayResults[artifact.id];
+              const replaying = replayRunningId === artifact.id;
+              return (
+                <li key={artifact.id} className="workflow-item">
+                  <button
+                    type="button"
+                    className="workflow-toggle"
+                    onClick={() => toggleArtifact(artifact)}
+                    aria-expanded={open}
+                  >
+                    <span className="workflow-chevron">{open ? "▾" : "▸"}</span>
+                    {displayName(artifact)}
+                  </button>
+
+                  {open ? (
+                    <div className="workflow-panel">
+                      {Object.entries(artifact.inputs).map(([key, def]) => (
+                        <div key={key}>
+                          <label htmlFor={`input-${artifact.id}-${key}`}>
+                            {humanizeKey(key)}
+                            {def.required ? "" : " (optional)"}
+                          </label>
+                          <input
+                            id={`input-${artifact.id}-${key}`}
+                            type="text"
+                            value={inputValues[key] ?? ""}
+                            placeholder={def.description || undefined}
+                            onChange={(e) =>
+                              setInputValues((prev) => ({
+                                ...prev,
+                                [key]: e.target.value,
+                              }))
+                            }
+                          />
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        disabled={replaying}
+                        onClick={() => void onRunWorkflow(artifact)}
+                      >
+                        {replaying ? "Running…" : "Run workflow"}
+                      </button>
+
+                      {replay ? (
+                        <div className="replay-result">
+                          <p className="label">Status</p>
+                          <p className="value">
+                            {replay.status === "success" ? "Success" : "Failed"}
+                          </p>
+                          {replay.status === "success"
+                            ? Object.entries(replay.outputs).map(([key, value]) => (
+                                <div key={key}>
+                                  <p className="label">{humanizeKey(key)}</p>
+                                  <p className="value">{value}</p>
+                                </div>
+                              ))
+                            : (
+                                <>
+                                  <p className="label">Error</p>
+                                  <p className="value">{replay.error}</p>
+                                  <p className="label">Code</p>
+                                  <p className="value">{replay.code}</p>
+                                </>
+                              )}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
+      <button type="button" className="new-workflow" onClick={focusNewWorkflow}>
+        New workflow
+      </button>
+
+      <form onSubmit={onSubmit}>
         <label htmlFor="goal">Goal</label>
         <textarea
           id="goal"
@@ -107,7 +376,7 @@ export default function Home() {
         />
 
         <button type="submit" disabled={running}>
-          {running ? "Running…" : "Run Agent"}
+          {running ? "Running…" : "Run agent"}
         </button>
         {formError ? (
           <p className="form-error" role="alert">
@@ -122,10 +391,6 @@ export default function Home() {
           <p className="value">{run.runId}</p>
           <p className="label">Status</p>
           <p className="value">{run.status}</p>
-          <p className="label">Target URL</p>
-          <p className="value">{run.url}</p>
-          <p className="label">Goal</p>
-          <p className="value">{run.goal}</p>
           {run.result ? (
             <>
               <p className="label">Result</p>

@@ -13,6 +13,21 @@ export type ResolveResult =
   | { ok: true; ref: string }
   | { ok: false; code: "target_missing" | "target_ambiguous" };
 
+/** Prefer these when the target has no explicit role. */
+const INTERACTIVE_ROLES = new Set([
+  "link",
+  "button",
+  "menuitem",
+  "tab",
+  "checkbox",
+  "radio",
+  "switch",
+  "combobox",
+  "option",
+  "textbox",
+  "searchbox",
+]);
+
 function normalize(s: string | undefined): string {
   return (s ?? "").trim().toLowerCase();
 }
@@ -34,6 +49,10 @@ function candidateMatches(
   // Match on replay selectors only (role/name/text/testId/within).
   if (target.role && normalize(candidate.role) !== normalize(target.role)) {
     return false;
+  }
+  // testId is authoritative — HTML name attrs often differ from a11y names.
+  if (target.testId) {
+    return true;
   }
   if (target.name) {
     const name = normalize(candidate.name);
@@ -68,16 +87,52 @@ async function filterByTestId(
   return verified;
 }
 
-function finalize(
+async function preferVisible(
   matches: SnapshotCandidate[],
-): ResolveResult {
-  if (matches.length === 0) {
+  browser: BrowserController,
+): Promise<SnapshotCandidate[]> {
+  if (matches.length <= 1) return matches;
+  const visible: SnapshotCandidate[] = [];
+  for (const candidate of matches) {
+    try {
+      const meta = await browser.inspectElement(candidate.ref);
+      if (meta.rect.width > 0 && meta.rect.height > 0 && !meta.disabled) {
+        visible.push(candidate);
+      }
+    } catch {
+      /* keep unknown visibility in play only if none inspect */
+    }
+  }
+  return visible.length > 0 ? visible : matches;
+}
+
+function preferInteractive(
+  matches: SnapshotCandidate[],
+  target: ReplayTarget,
+): SnapshotCandidate[] {
+  if (matches.length <= 1 || target.role) return matches;
+  const interactive = matches.filter(
+    (m) => m.role && INTERACTIVE_ROLES.has(normalize(m.role)),
+  );
+  return interactive.length > 0 ? interactive : matches;
+}
+
+async function finalize(
+  matches: SnapshotCandidate[],
+  target: ReplayTarget,
+  browser: BrowserController,
+): Promise<ResolveResult> {
+  let narrowed = preferInteractive(matches, target);
+  narrowed = await preferVisible(narrowed, browser);
+
+  if (narrowed.length === 0) {
     return { ok: false, code: "target_missing" };
   }
-  if (matches.length > 1) {
-    return { ok: false, code: "target_ambiguous" };
+  if (narrowed.length > 1) {
+    // ponytail: document-order first when duplicate nav (desktop+mobile); role/testId if that mis-clicks
+    return { ok: true, ref: narrowed[0]!.ref };
   }
-  return { ok: true, ref: matches[0]!.ref };
+  return { ok: true, ref: narrowed[0]!.ref };
 }
 
 export async function resolveTarget(
@@ -110,7 +165,7 @@ export async function resolveTarget(
     if (target.testId) {
       matches = await filterByTestId(matches, target.testId, browser);
     }
-    return finalize(matches);
+    return finalize(matches, target, browser);
   }
 
   let matches = parseSnapshotCandidates(snapshot).filter((c) =>
@@ -121,5 +176,5 @@ export async function resolveTarget(
     matches = await filterByTestId(matches, target.testId, browser);
   }
 
-  return finalize(matches);
+  return finalize(matches, target, browser);
 }

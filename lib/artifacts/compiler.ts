@@ -1,7 +1,4 @@
-import {
-  isCredentialField,
-  type AuthFieldMeta,
-} from "../agent/auth-form";
+import { isPasswordField, type AuthFieldMeta } from "../agent/auth-form";
 import type { AgentState } from "../agent/state";
 import type {
   ArtifactOutput,
@@ -303,8 +300,11 @@ function generalizeInputTarget(recorded: RecordedTarget): ReplayTarget {
   const target: ReplayTarget = {};
   if (recorded.testId) target.testId = recorded.testId;
   if (recorded.role) target.role = recorded.role;
-  if (recorded.name) target.name = recorded.name;
-  else if (recorded.text) target.text = recorded.text;
+  // With testId, skip HTML name attr (often ≠ a11y name). Without it, keep name.
+  if (!recorded.testId) {
+    if (recorded.name) target.name = recorded.name;
+    else if (recorded.text) target.text = recorded.text;
+  }
   if (recorded.placeholder) target.placeholder = recorded.placeholder;
   return target;
 }
@@ -447,7 +447,8 @@ export function compileArtifact(
     }
 
     if (name === "type") {
-      if (isCredentialField(recordedToAuthMeta(recorded))) {
+      // Password/OTP only — email/username are often task data (profile edits).
+      if (isPasswordField(recordedToAuthMeta(recorded))) {
         throw new ArtifactCompileError(
           "Credential typing steps cannot be compiled into artifacts",
         );

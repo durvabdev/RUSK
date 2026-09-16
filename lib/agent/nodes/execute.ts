@@ -99,11 +99,21 @@ export function createExecuteNode(
       } catch {
         /* fall through to snapshot */
       }
+      const fromSnapshot = recordedTargetFromSnapshot(
+        state.observation?.snapshot,
+        ref,
+      );
       if (!recordedTarget) {
-        recordedTarget = recordedTargetFromSnapshot(
-          state.observation?.snapshot,
-          ref,
-        );
+        recordedTarget = fromSnapshot;
+      } else if (fromSnapshot) {
+        // Inspection often omits a11y role; snapshot still has link/button/etc.
+        if (!recordedTarget.role && fromSnapshot.role) {
+          recordedTarget = { ...recordedTarget, role: fromSnapshot.role };
+        }
+        // Prefer a11y name from snapshot over HTML name= from inspect.
+        if (fromSnapshot.name) {
+          recordedTarget = { ...recordedTarget, name: fromSnapshot.name };
+        }
       }
     }
 

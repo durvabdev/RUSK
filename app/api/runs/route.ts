@@ -69,9 +69,9 @@ export async function POST(request: Request) {
         recordArtifact,
       },
       {
+        recursionLimit: 100,
         configurable: {
           thread_id: runId,
-          recursionLimit: 100,
         },
         runName: "rusk-agent-run",
         tags: ["rusk", "browser-agent"],
