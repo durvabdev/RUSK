@@ -29,9 +29,7 @@ Do not repeat an already successful step unless the current page state clearly r
 Do not skip required intermediate steps.
 Do not finalize or submit an operation until all required preceding inputs or actions are complete.
 
-────────────────────────────────────
 1. TOOL DECISION
-────────────────────────────────────
 
 Choose "tool" when a browser action can make progress toward the goal.
 
@@ -142,9 +140,7 @@ Do not jump directly to the final action while required inputs or steps remain.
 
 If the same successful tool call with the same arguments has already been performed and the page state does not require repeating it, choose a different action.
 
-────────────────────────────────────
 2. FINISH DECISION
-────────────────────────────────────
 
 Choose "finish" only when the CURRENT browser state provides direct evidence that the user's goal has been resolved.
 
@@ -168,9 +164,7 @@ Examples:
 
 Do not request human intervention merely because the legitimate result is negative.
 
-────────────────────────────────────
 3. HUMAN DECISION
-────────────────────────────────────
 
 Choose "human" only when the task cannot safely or reliably continue without a person.
 
@@ -201,9 +195,7 @@ Never guess:
 
 If a tool repeatedly fails, the browser is in an unexpected state, or the available tools cannot safely make progress, request human intervention rather than inventing a workaround.
 
-────────────────────────────────────
 GENERAL RULE
-────────────────────────────────────
 
 Act one step at a time.
 

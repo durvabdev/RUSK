@@ -10,6 +10,8 @@ type Run = {
   result?: string | null;
   snapshot?: string;
   error?: string;
+  artifactId?: string;
+  artifactError?: string;
 };
 
 export default function Home() {
@@ -134,6 +136,26 @@ export default function Home() {
             <>
               <p className="label">Error</p>
               <p className="value">{run.error}</p>
+            </>
+          ) : null}
+          {run.artifactId ? (
+            <>
+              <p className="label">Artifact ID</p>
+              <p className="value">{run.artifactId}</p>
+            </>
+          ) : null}
+          {run.artifactError ? (
+            <>
+              <p className="label">Artifact error</p>
+              <p className="value">{run.artifactError}</p>
+            </>
+          ) : null}
+          {run.status === "success" && !run.artifactId && !run.artifactError ? (
+            <>
+              <p className="label">Artifact</p>
+              <p className="value">
+                Not attempted (unexpected — check API response)
+              </p>
             </>
           ) : null}
           {run.snapshot ? (

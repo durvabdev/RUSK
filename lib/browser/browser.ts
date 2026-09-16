@@ -28,6 +28,7 @@ export type ElementInspection = {
   href: string | null;
   placeholder: string | null;
   autocomplete: string | null;
+  testId: string | null;
   contentEditable: boolean;
   disabled: boolean;
   readOnly: boolean;

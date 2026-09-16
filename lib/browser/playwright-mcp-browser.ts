@@ -71,6 +71,7 @@ export const INSPECT_ELEMENT_FN = String.raw`(element) => {
     href: trim(element.href || element.getAttribute("href")),
     placeholder: trim(element.getAttribute("placeholder") || element.placeholder),
     autocomplete: trim(element.getAttribute("autocomplete") || element.autocomplete),
+    testId: trim(element.getAttribute("data-testid")),
     contentEditable:
       element.isContentEditable === true ||
       element.getAttribute("contenteditable") === "true",

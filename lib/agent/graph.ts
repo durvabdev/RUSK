@@ -56,7 +56,7 @@ export function createAgentGraph({
   const observeNode = createObserveNode(browser);
   const decideNode = createDecideNode(model, registry);
   const guardNode = createGuardNode(browser);
-  const executeNode = createExecuteNode(registry);
+  const executeNode = createExecuteNode(registry, browser);
 
   function routeDecision(state: AgentState): DecideRoute {
     const decision = state.decision;

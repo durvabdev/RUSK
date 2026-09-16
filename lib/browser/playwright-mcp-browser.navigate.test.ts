@@ -72,6 +72,7 @@ test("inspect_element tool delegates ref to controller", async () => {
         href: null,
         placeholder: null,
         autocomplete: null,
+        testId: null,
         contentEditable: false,
         disabled: false,
         readOnly: false,

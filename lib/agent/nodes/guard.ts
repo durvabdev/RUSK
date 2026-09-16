@@ -59,6 +59,7 @@ export function createGuardNode(browser: BrowserController) {
         },
         humanRequest: CREDENTIAL_HUMAN_REQUEST,
         status: "waiting_for_human",
+        authRequired: true,
       };
     }
 
@@ -76,6 +77,7 @@ export function createGuardNode(browser: BrowserController) {
       },
       humanRequest: CREDENTIAL_HUMAN_REQUEST,
       status: "waiting_for_human",
+      authRequired: true,
     };
   };
 }

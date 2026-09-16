@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { compileArtifact } from "@/lib/artifacts/compiler";
+import { createArtifactRepository } from "@/lib/artifacts/repository";
 import { getAgentRuntime } from "@/lib/agent/runtime";
 
 export const runtime = "nodejs";
@@ -60,14 +62,17 @@ export async function POST(request: Request) {
 
     await browser.navigate(url);
 
+    // setting recursion limit to 50
     const result = await graph.invoke(
       {
         runId,
         goal,
+        startUrl: url,
       },
       {
         configurable: {
           thread_id: runId,
+          recursionLimit: 100,
         },
         runName: "rusk-agent-run",
         tags: ["rusk", "browser-agent"],
@@ -78,12 +83,29 @@ export async function POST(request: Request) {
       },
     );
 
+    let artifactId: string | undefined;
+    let artifactError: string | undefined;
+
+    if (result.status === "success") {
+      try {
+        const artifact = compileArtifact(result);
+        const repo = createArtifactRepository();
+        await repo.save(artifact);
+        artifactId = artifact.id;
+      } catch (err) {
+        artifactError =
+          err instanceof Error ? err.message : String(err);
+      }
+    }
+
     return NextResponse.json(
       {
         ...result,
         runId,
         url,
         goal,
+        ...(artifactId ? { artifactId } : {}),
+        ...(artifactError ? { artifactError } : {}),
       },
       { status: 201 },
     );
