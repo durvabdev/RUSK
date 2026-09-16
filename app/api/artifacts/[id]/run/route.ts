@@ -33,13 +33,15 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Artifact not found" }, { status: 404 });
   }
 
+  const runId = crypto.randomUUID();
   const { browser } = await getAgentRuntime();
   const result = await replayArtifact(
     artifact,
     body.inputs as Record<string, unknown>,
     browser,
+    { runId },
   );
 
   const status = result.status === "success" ? 200 : 422;
-  return NextResponse.json(result, { status });
+  return NextResponse.json({ ...result, runId }, { status });
 }

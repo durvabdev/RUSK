@@ -129,8 +129,7 @@ async function finalize(
     return { ok: false, code: "target_missing" };
   }
   if (narrowed.length > 1) {
-    // ponytail: document-order first when duplicate nav (desktop+mobile); role/testId if that mis-clicks
-    return { ok: true, ref: narrowed[0]!.ref };
+    return { ok: false, code: "target_ambiguous" };
   }
   return { ok: true, ref: narrowed[0]!.ref };
 }

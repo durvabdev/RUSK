@@ -29,8 +29,29 @@ type ArtifactSummary = {
 };
 
 type ArtifactRunResult =
-  | { status: "success"; outputs: Record<string, string> }
-  | { status: "failed"; error: string; code: string };
+  | { status: "success"; outputs: Record<string, string>; runId?: string }
+  | {
+      status: "business_outcome";
+      code: string;
+      message: string;
+      runId?: string;
+      context?: unknown;
+    }
+  | {
+      status: "recoverable";
+      code: string;
+      message: string;
+      retryable: true;
+      runId?: string;
+      context?: unknown;
+    }
+  | {
+      status: "failure";
+      code: string;
+      message: string;
+      runId?: string;
+      context?: unknown;
+    };
 
 function originOf(url: string): string | null {
   try {
@@ -138,8 +159,8 @@ export default function Home() {
         setReplayResults((prev) => ({
           ...prev,
           [artifact.id]: {
-            status: "failed",
-            error: `Missing required input: ${key}`,
+            status: "failure",
+            message: `Missing required input: ${key}`,
             code: "input_invalid",
           },
         }));
@@ -155,33 +176,72 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ inputs }),
       });
-      const data = (await res.json().catch(() => ({}))) as {
+      const data = (await res.json().catch(() => ({}))) as Record<
+        string,
+        unknown
+      > & {
         status?: string;
         outputs?: Record<string, string>;
+        message?: string;
         error?: string;
         code?: string;
+        runId?: string;
+        context?: unknown;
       };
+      const runId = typeof data.runId === "string" ? data.runId : undefined;
       if (data.status === "success" && data.outputs) {
         setReplayResults((prev) => ({
           ...prev,
-          [artifact.id]: { status: "success", outputs: data.outputs! },
+          [artifact.id]: {
+            status: "success",
+            outputs: data.outputs!,
+            ...(runId ? { runId } : {}),
+          },
         }));
-      } else if (data.status === "failed") {
+      } else if (data.status === "business_outcome" && data.code && data.message) {
         setReplayResults((prev) => ({
           ...prev,
           [artifact.id]: {
-            status: "failed",
-            error: data.error || "Replay failed",
-            code: data.code || "step_failed",
+            status: "business_outcome",
+            code: String(data.code),
+            message: String(data.message),
+            ...(runId ? { runId } : {}),
+            ...(data.context ? { context: data.context } : {}),
+          },
+        }));
+      } else if (data.status === "recoverable" && data.code && data.message) {
+        setReplayResults((prev) => ({
+          ...prev,
+          [artifact.id]: {
+            status: "recoverable",
+            code: String(data.code),
+            message: String(data.message),
+            retryable: true,
+            ...(runId ? { runId } : {}),
+            ...(data.context ? { context: data.context } : {}),
+          },
+        }));
+      } else if (data.status === "failure" && data.code) {
+        setReplayResults((prev) => ({
+          ...prev,
+          [artifact.id]: {
+            status: "failure",
+            code: String(data.code),
+            message: String(data.message || data.error || "Replay failed"),
+            ...(runId ? { runId } : {}),
+            ...(data.context ? { context: data.context } : {}),
           },
         }));
       } else {
         setReplayResults((prev) => ({
           ...prev,
           [artifact.id]: {
-            status: "failed",
-            error: data.error || `Request failed (${res.status})`,
-            code: "step_failed",
+            status: "failure",
+            message: String(
+              data.message || data.error || `Request failed (${res.status})`,
+            ),
+            code: String(data.code || "step_failed"),
+            ...(runId ? { runId } : {}),
           },
         }));
       }
@@ -189,8 +249,8 @@ export default function Home() {
       setReplayResults((prev) => ({
         ...prev,
         [artifact.id]: {
-          status: "failed",
-          error: err instanceof Error ? err.message : String(err),
+          status: "failure",
+          message: err instanceof Error ? err.message : String(err),
           code: "step_failed",
         },
       }));
@@ -332,25 +392,16 @@ export default function Home() {
 
                       {replay ? (
                         <div className="replay-result">
-                          <p className="label">Status</p>
-                          <p className="value">
-                            {replay.status === "success" ? "Success" : "Failed"}
-                          </p>
-                          {replay.status === "success"
-                            ? Object.entries(replay.outputs).map(([key, value]) => (
-                                <div key={key}>
-                                  <p className="label">{humanizeKey(key)}</p>
-                                  <p className="value">{value}</p>
-                                </div>
-                              ))
-                            : (
-                                <>
-                                  <p className="label">Error</p>
-                                  <p className="value">{replay.error}</p>
-                                  <p className="label">Code</p>
-                                  <p className="value">{replay.code}</p>
-                                </>
-                              )}
+                          {replay.runId ? (
+                            <>
+                              <p className="label">Replay runId</p>
+                              <p className="value">{replay.runId}</p>
+                            </>
+                          ) : null}
+                          <p className="label">Result</p>
+                          <pre className="value" style={{ whiteSpace: "pre-wrap" }}>
+                            {JSON.stringify(replay, null, 2)}
+                          </pre>
                         </div>
                       ) : null}
                     </div>

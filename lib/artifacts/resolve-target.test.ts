@@ -81,6 +81,22 @@ test("duplicate Member links pick first visible", async () => {
   assert.deepEqual(result, { ok: true, ref: "desktop" });
 });
 
+test("two fully visible duplicates are target_ambiguous", async () => {
+  const snapshot = `
+- link "Member" [ref=desktop]
+- link "Member" [ref=mobile]
+`;
+  const result = await resolveTarget(
+    { text: "Member" },
+    snapshot,
+    mockBrowser({
+      desktop: inspection({ role: "link" }),
+      mobile: inspection({ role: "link" }),
+    }),
+  );
+  assert.deepEqual(result, { ok: false, code: "target_ambiguous" });
+});
+
 test("testId wins when HTML name differs from a11y name", async () => {
   const snapshot = `
 - searchbox "Member ID or name" [ref=search]

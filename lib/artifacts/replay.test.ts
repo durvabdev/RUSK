@@ -4,6 +4,10 @@ import type { BrowserController, ElementInspection } from "../browser/browser.ts
 import { replayArtifact } from "./replay.ts";
 import type { WorkflowArtifact } from "./schema.ts";
 
+process.env.RUSK_RUNS_DIR =
+  process.env.RUSK_RUNS_DIR ??
+  `${process.cwd()}/.rusk/test-runs-${process.pid}`;
+
 const PRIYA_MEMBER_ID = "002010";
 const PRIYA_VIEW_REF = "priya-view";
 const MARCUS_VIEW_REF = "marcus-view";
@@ -78,6 +82,7 @@ function lookUpMemberArtifact(): WorkflowArtifact {
         extractor: { kind: "definition", label: "Address" },
       },
     ],
+    conditions: [],
     createdAt: "2026-09-16T00:00:00.000Z",
   };
 }
@@ -252,4 +257,353 @@ test("look_up_member artifact replays for Marcus Chen, not recorded Priya", asyn
     navigatedUrls.some((u) => u.includes(PRIYA_MEMBER_ID)),
     false,
   );
+});
+
+const FAST_POLL = { pollIntervalMs: 20, pollTimeoutMs: 80 };
+
+function baseBrowser(
+  overrides: Partial<BrowserController> = {},
+): BrowserController {
+  return {
+    observe: async () => ({ snapshot: "", elements: [] }),
+    navigate: async () => ({ ok: true }),
+    click: async () => ({ ok: true }),
+    type: async () => ({ ok: true }),
+    select: async () => ({ ok: true }),
+    pressKey: async () => ({ ok: true }),
+    hover: async () => ({ ok: true }),
+    goBack: async () => ({ ok: true }),
+    scroll: async () => ({ ok: true }),
+    inspectElement: async () => inspection({ rect: { x: 0, y: 0, width: 10, height: 10 } }),
+    inspectDom: async () => ({ url: "", title: "", candidates: [] }),
+    ...overrides,
+  };
+}
+
+test("known member_not_found condition returns business_outcome", async () => {
+  const artifact: WorkflowArtifact = {
+    ...lookUpMemberArtifact(),
+    steps: [
+      { action: "click", target: { text: "Member" } },
+      {
+        action: "type",
+        target: { testId: "search-input" },
+        value: { source: "input", name: "member_query" },
+      },
+      {
+        action: "click",
+        target: { testId: "search-submit" },
+      },
+      {
+        action: "click",
+        target: { text: "View Member" },
+      },
+    ],
+    conditions: [
+      {
+        class: "business_outcome",
+        code: "member_not_found",
+        message: "No members found",
+        when: { kind: "text_present", text: "No members found" },
+      },
+    ],
+    outputs: [],
+  };
+
+  let phase: "home" | "search" | "empty" = "home";
+  const browser = baseBrowser({
+    observe: async () => {
+      if (phase === "home") {
+        return { snapshot: HOME_SNAPSHOT, elements: [], url: "https://example.com/" };
+      }
+      if (phase === "search") {
+        return { snapshot: SEARCH_SNAPSHOT, elements: [], url: "https://example.com/search" };
+      }
+      return {
+        snapshot: `- text: "No members found"`,
+        elements: [],
+        url: "https://example.com/search",
+      };
+    },
+    click: async (ref) => {
+      if (ref === "nav-member") phase = "search";
+      else if (ref === "submit") phase = "empty";
+      return { ok: true };
+    },
+    inspectElement: async (ref) => {
+      if (ref === "nav-member") {
+        return inspection({
+          role: "link",
+          text: "Member",
+          name: "Member",
+          rect: { x: 0, y: 0, width: 40, height: 20 },
+        });
+      }
+      if (ref === "search") {
+        return inspection({ testId: "search-input", tag: "input" });
+      }
+      if (ref === "submit") {
+        return inspection({ testId: "search-submit", tag: "button" });
+      }
+      return inspection({
+        role: "heading",
+        rect: { x: 0, y: 0, width: 100, height: 20 },
+      });
+    },
+  });
+
+  const result = await replayArtifact(
+    artifact,
+    { member_query: "nobody" },
+    browser,
+    FAST_POLL,
+  );
+
+  assert.equal(result.status, "business_outcome");
+  if (result.status !== "business_outcome") return;
+  assert.equal(result.code, "member_not_found");
+  assert.equal(result.message, "No members found");
+});
+
+test("delayed target appears after polls then succeeds", async () => {
+  let observes = 0;
+  const browser = baseBrowser({
+    observe: async () => {
+      observes += 1;
+      // First resolve attempt misses; later attempts see the link.
+      if (observes < 3) {
+        return { snapshot: `- heading "Home" [ref=h]`, elements: [] };
+      }
+      return {
+        snapshot: `- link "Go" [ref=go]`,
+        elements: [],
+        url: "https://example.com/",
+      };
+    },
+    inspectElement: async (ref) =>
+      inspection({
+        role: ref === "go" ? "link" : "heading",
+        text: ref === "go" ? "Go" : "Home",
+        name: ref === "go" ? "Go" : "Home",
+        rect: { x: 0, y: 0, width: 20, height: 10 },
+      }),
+  });
+
+  const artifact: WorkflowArtifact = {
+    id: "delay-target",
+    version: 1,
+    kind: "browser_workflow",
+    name: "delay_target",
+    description: "d",
+    sourceRunId: "r",
+    startUrl: "https://example.com/",
+    requiresAuthenticatedSession: false,
+    inputs: {},
+    steps: [{ action: "click", target: { text: "Go" } }],
+    outputs: [],
+    conditions: [],
+    createdAt: "2026-09-16T00:00:00.000Z",
+  };
+
+  const result = await replayArtifact(artifact, {}, browser, {
+    pollIntervalMs: 10,
+    pollTimeoutMs: 500,
+  });
+  assert.equal(result.status, "success");
+  assert.ok(observes >= 3);
+});
+
+test("target remains missing returns recoverable", async () => {
+  const browser = baseBrowser({
+    observe: async () => ({
+      snapshot: `- heading "Empty" [ref=h]`,
+      elements: [],
+      url: "https://example.com/",
+    }),
+    inspectElement: async () =>
+      inspection({
+        role: "heading",
+        rect: { x: 0, y: 0, width: 10, height: 10 },
+      }),
+  });
+
+  const artifact: WorkflowArtifact = {
+    id: "missing-target",
+    version: 1,
+    kind: "browser_workflow",
+    name: "missing_target",
+    description: "d",
+    sourceRunId: "r",
+    startUrl: "https://example.com/",
+    requiresAuthenticatedSession: false,
+    inputs: {},
+    steps: [{ action: "click", target: { text: "Never" } }],
+    outputs: [],
+    conditions: [],
+    createdAt: "2026-09-16T00:00:00.000Z",
+  };
+
+  const result = await replayArtifact(artifact, {}, browser, FAST_POLL);
+  assert.equal(result.status, "recoverable");
+  if (result.status !== "recoverable") return;
+  assert.equal(result.code, "target_missing");
+  assert.equal(result.retryable, true);
+  assert.equal(result.context?.action, "click");
+});
+
+test("target ambiguous fails immediately without polling", async () => {
+  let observes = 0;
+  const browser = baseBrowser({
+    observe: async () => {
+      observes += 1;
+      return {
+        snapshot: `
+- link "Go" [ref=a]
+- link "Go" [ref=b]
+`,
+        elements: [],
+        url: "https://example.com/",
+      };
+    },
+    inspectElement: async () =>
+      inspection({
+        role: "link",
+        text: "Go",
+        name: "Go",
+        rect: { x: 0, y: 0, width: 20, height: 10 },
+      }),
+  });
+
+  const artifact: WorkflowArtifact = {
+    id: "ambiguous",
+    version: 1,
+    kind: "browser_workflow",
+    name: "ambiguous",
+    description: "d",
+    sourceRunId: "r",
+    startUrl: "https://example.com/",
+    requiresAuthenticatedSession: false,
+    inputs: {},
+    steps: [{ action: "click", target: { text: "Go" } }],
+    outputs: [],
+    conditions: [],
+    createdAt: "2026-09-16T00:00:00.000Z",
+  };
+
+  const started = Date.now();
+  const result = await replayArtifact(artifact, {}, browser, {
+    pollIntervalMs: 200,
+    pollTimeoutMs: 2000,
+  });
+  const elapsed = Date.now() - started;
+
+  assert.equal(result.status, "failure");
+  if (result.status !== "failure") return;
+  assert.equal(result.code, "target_ambiguous");
+  assert.equal(observes, 1);
+  assert.ok(elapsed < 500, `expected immediate fail, took ${elapsed}ms`);
+});
+
+test("delayed checkpoint eventually passes", async () => {
+  let observes = 0;
+  const browser = baseBrowser({
+    observe: async () => {
+      observes += 1;
+      if (observes === 1) {
+        return {
+          snapshot: `- link "Next" [ref=next]`,
+          elements: [],
+        };
+      }
+      // Post-click checkpoint polls
+      if (observes < 4) {
+        return { snapshot: `- heading "Loading" [ref=h]`, elements: [] };
+      }
+      return {
+        snapshot: `- heading "Ready" [ref=h]`,
+        elements: [],
+        url: "https://example.com/ready",
+      };
+    },
+    inspectElement: async (ref) =>
+      inspection({
+        role: ref === "next" ? "link" : "heading",
+        text: ref === "next" ? "Next" : "Ready",
+        name: ref === "next" ? "Next" : "Ready",
+        rect: { x: 0, y: 0, width: 20, height: 10 },
+      }),
+  });
+
+  const artifact: WorkflowArtifact = {
+    id: "checkpoint-ok",
+    version: 1,
+    kind: "browser_workflow",
+    name: "checkpoint_ok",
+    description: "d",
+    sourceRunId: "r",
+    startUrl: "https://example.com/",
+    requiresAuthenticatedSession: false,
+    inputs: {},
+    steps: [
+      {
+        action: "click",
+        target: { text: "Next" },
+        checkpoint: { kind: "text_present", text: "Ready" },
+      },
+    ],
+    outputs: [],
+    conditions: [],
+    createdAt: "2026-09-16T00:00:00.000Z",
+  };
+
+  const result = await replayArtifact(artifact, {}, browser, {
+    pollIntervalMs: 10,
+    pollTimeoutMs: 500,
+  });
+  assert.equal(result.status, "success");
+});
+
+test("checkpoint timeout returns checkpoint_failed", async () => {
+  const browser = baseBrowser({
+    observe: async () => ({
+      snapshot: `- link "Next" [ref=next]
+- heading "Loading" [ref=h]`,
+      elements: [],
+      url: "https://example.com/",
+    }),
+    inspectElement: async (ref) =>
+      inspection({
+        role: ref === "next" ? "link" : "heading",
+        text: ref === "next" ? "Next" : "Loading",
+        name: ref === "next" ? "Next" : "Loading",
+        rect: { x: 0, y: 0, width: 20, height: 10 },
+      }),
+  });
+
+  const artifact: WorkflowArtifact = {
+    id: "checkpoint-fail",
+    version: 1,
+    kind: "browser_workflow",
+    name: "checkpoint_fail",
+    description: "d",
+    sourceRunId: "r",
+    startUrl: "https://example.com/",
+    requiresAuthenticatedSession: false,
+    inputs: {},
+    steps: [
+      {
+        action: "click",
+        target: { text: "Next" },
+        checkpoint: { kind: "text_present", text: "Ready" },
+      },
+    ],
+    outputs: [],
+    conditions: [],
+    createdAt: "2026-09-16T00:00:00.000Z",
+  };
+
+  const result = await replayArtifact(artifact, {}, browser, FAST_POLL);
+  assert.equal(result.status, "failure");
+  if (result.status !== "failure") return;
+  assert.equal(result.code, "checkpoint_failed");
 });

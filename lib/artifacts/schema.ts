@@ -48,6 +48,22 @@ export const ReplayTargetSchema = z.object({
 
 export type ReplayTarget = z.infer<typeof ReplayTargetSchema>;
 
+export const TextPresentSchema = z.object({
+  kind: z.literal("text_present"),
+  text: z.string(),
+});
+
+export type TextPresent = z.infer<typeof TextPresentSchema>;
+
+export const ArtifactConditionSchema = z.object({
+  class: z.enum(["business_outcome", "recoverable"]),
+  code: z.string(),
+  message: z.string(),
+  when: TextPresentSchema,
+});
+
+export type ArtifactCondition = z.infer<typeof ArtifactConditionSchema>;
+
 const ReplayStepNavigateSchema = z.object({
   action: z.literal("navigate"),
   url: z.string(),
@@ -56,6 +72,7 @@ const ReplayStepNavigateSchema = z.object({
 const ReplayStepClickSchema = z.object({
   action: z.literal("click"),
   target: ReplayTargetSchema,
+  checkpoint: TextPresentSchema.optional(),
 });
 
 const ReplayStepTypeSchema = z.object({
@@ -120,10 +137,19 @@ export const WorkflowArtifactSchema = z.object({
   inputs: z.record(z.string(), ArtifactInputDefSchema),
   steps: z.array(ReplayStepSchema),
   outputs: z.array(ArtifactOutputSchema),
+  conditions: z.array(ArtifactConditionSchema).default([]),
   createdAt: z.string(),
 });
 
 export type WorkflowArtifact = z.infer<typeof WorkflowArtifactSchema>;
+
+export type ReplayContext = {
+  stepIndex?: number;
+  action?: string;
+  expected?: string;
+  observed?: string;
+  currentUrl?: string;
+};
 
 export type ArtifactRunResult =
   | {
@@ -131,13 +157,21 @@ export type ArtifactRunResult =
       outputs: Record<string, string>;
     }
   | {
-      status: "failed";
-      error: string;
-      code:
-        | "input_invalid"
-        | "target_missing"
-        | "target_ambiguous"
-        | "output_missing"
-        | "output_ambiguous"
-        | "step_failed";
+      status: "business_outcome";
+      code: string;
+      message: string;
+      context?: ReplayContext;
+    }
+  | {
+      status: "recoverable";
+      code: string;
+      message: string;
+      retryable: true;
+      context?: ReplayContext;
+    }
+  | {
+      status: "failure";
+      code: string;
+      message: string;
+      context?: ReplayContext;
     };

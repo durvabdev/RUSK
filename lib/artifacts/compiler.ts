@@ -505,6 +505,7 @@ export function compileArtifact(
     inputs,
     steps,
     outputs,
+    conditions: [],
     createdAt: new Date().toISOString(),
   };
 }

@@ -131,6 +131,15 @@ function normalize(s: string): string {
   return s.trim().toLowerCase();
 }
 
+/** True if haystack contains needle as a whole phrase (not a prefix of a longer token). */
+export function containsPhrase(haystack: string, needle: string): boolean {
+  const n = normalize(needle);
+  if (!n) return false;
+  const escaped = n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // \b so "elena varga" does not match inside "elena vargas"
+  return new RegExp(`\\b${escaped}\\b`, "i").test(haystack);
+}
+
 /**
  * Minimal containers whose subtree contains `text`.
  * Prefer semantic container roles; otherwise any node that is not an ancestor
@@ -148,7 +157,7 @@ export function minimalContainersMatchingText(
     all.push(...nodesInSubtree(root));
   }
 
-  const containing = all.filter((n) => subtreeText(n).includes(needle));
+  const containing = all.filter((n) => containsPhrase(subtreeText(n), needle));
   if (containing.length === 0) return [];
 
   // Prefer nodes with container roles when available.

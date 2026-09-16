@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "tsx --test lib/**/*.test.ts"
+    "test": "tsx --test lib/**/*.test.ts",
+    "evidence:export": "tsx scripts/evidence-export.ts"
   },
   "dependencies": {
     "@langchain/core": "^1.2.11",

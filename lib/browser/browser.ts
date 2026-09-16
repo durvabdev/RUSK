@@ -71,4 +71,7 @@ export interface BrowserController {
 
   /** Compact DOM candidates via Playwright connectOverCDP. */
   inspectDom(limit?: number): Promise<DomInspection>;
+
+  /** Optional CDP screenshot for evidence; returns false if unavailable. */
+  screenshot?(filePath: string): Promise<boolean>;
 }

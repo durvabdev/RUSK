@@ -23,7 +23,7 @@ import { createGuardNode } from "./nodes/guard";
 import { createExecuteNode } from "./nodes/execute";
 import { createCompileArtifactNode } from "./nodes/compile-artifact";
 
-const DEFAULT_MAX_STEPS = 15;
+const DEFAULT_MAX_STEPS = 50;
 
 type CreateAgentGraphOptions = {
   browser: BrowserController;

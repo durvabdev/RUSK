@@ -2,6 +2,7 @@ import type {
   BrowserController,
   ElementInspection,
 } from "../../browser/browser";
+import { appendRunEvent } from "../../evidence/run-log";
 import type { ToolRegistry } from "../../tools/registry";
 import { parseSnapshotCandidates } from "../../artifacts/snapshot-parser";
 import type { RecordedTarget } from "../../artifacts/schema";
@@ -118,6 +119,13 @@ export function createExecuteNode(
     }
 
     const toolResult = await registry.invoke(toolCall);
+
+    await appendRunEvent(state.runId, {
+      event: "action_result",
+      stepIndex: state.stepCount + 1,
+      action: toolCall.name,
+      status: toolResult.ok ? "ok" : "error",
+    });
 
     const step: AgentStep = {
       step: state.stepCount + 1,

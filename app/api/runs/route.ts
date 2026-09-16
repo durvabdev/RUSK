@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getAgentRuntime } from "@/lib/agent/runtime";
+import { writeRunMeta } from "@/lib/evidence/run-log";
 
 export const runtime = "nodejs";
 
@@ -58,6 +59,8 @@ export async function POST(request: Request) {
   try {
     const { graph, browser } =
       await getAgentRuntime();
+
+    await writeRunMeta(runId, { kind: "discovery" });
 
     await browser.navigate(url);
 

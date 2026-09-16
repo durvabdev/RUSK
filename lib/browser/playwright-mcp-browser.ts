@@ -89,6 +89,98 @@ export const INSPECT_ELEMENT_FN = String.raw`(element) => {
   };
 }`;
 
+/** Fixed — list <option> value/label for select debugging/matching. */
+export const LIST_SELECT_OPTIONS_FN = String.raw`(element) => {
+  const trim = (value) => {
+    if (value == null) return null;
+    const normalized = String(value).replace(/\s+/g, " ").trim();
+    return normalized || null;
+  };
+  if (!element || String(element.tagName).toLowerCase() !== "select") {
+    return {
+      tag: element && element.tagName ? element.tagName.toLowerCase() : null,
+      options: [],
+    };
+  }
+  return {
+    tag: "select",
+    id: trim(element.id),
+    name: trim(element.name),
+    options: Array.from(element.options || []).map((opt, index) => ({
+      index,
+      value: trim(opt.value),
+      label: trim(opt.label || opt.text),
+      text: trim(opt.text),
+      disabled: Boolean(opt.disabled),
+    })),
+  };
+}`;
+
+export type SelectOptionMeta = {
+  index: number;
+  value: string | null;
+  label: string | null;
+  text: string | null;
+  disabled?: boolean;
+};
+
+/**
+ * Map agent-facing option text to the real option value.
+ * Snapshot labels often omit balances; values are often account ids.
+ */
+export function resolveSelectOption(
+  options: SelectOptionMeta[],
+  requested: string,
+): { value: string; strategy: string } | null {
+  const needle = requested.trim();
+  if (!needle) return null;
+  const lower = needle.toLowerCase();
+  const enabled = options.filter((o) => !o.disabled);
+
+  const pick = (
+    matches: SelectOptionMeta[],
+    strategy: string,
+  ): { value: string; strategy: string } | null => {
+    if (matches.length !== 1) return null;
+    const v = matches[0]!.value;
+    if (v == null || v === "") return null;
+    return { value: v, strategy };
+  };
+
+  const exactValue = pick(
+    enabled.filter((o) => o.value === needle),
+    "exact-value",
+  );
+  if (exactValue) return exactValue;
+
+  const exactLabel = pick(
+    enabled.filter((o) => o.label === needle || o.text === needle),
+    "exact-label",
+  );
+  if (exactLabel) return exactLabel;
+
+  // "Savings SV-2010" → "Savings SV-2010 ($29,975.00)"
+  const labelIncludes = pick(
+    enabled.filter((o) => {
+      const label = (o.label ?? o.text ?? "").toLowerCase();
+      return label.includes(lower);
+    }),
+    "label-includes",
+  );
+  if (labelIncludes) return labelIncludes;
+
+  const valueFuzzy = pick(
+    enabled.filter((o) => {
+      const v = (o.value ?? "").toLowerCase();
+      return v === lower || (v.length > 0 && (lower.includes(v) || v.includes(lower)));
+    }),
+    "value-fuzzy",
+  );
+  if (valueFuzzy) return valueFuzzy;
+
+  return null;
+}
+
 function toolText(result: unknown) {
   if (
     typeof result !== "object" ||
@@ -470,14 +562,34 @@ export function getBrowser(): BrowserController {
     },
 
     select(ref: string, value: string) {
-      return withClient((client) =>
-        call(client, "browser_select_option", {
+      return withClient(async (client) => {
+        let opts: SelectOptionMeta[] = [];
+        try {
+          const raw = toolText(
+            await client.callTool({
+              name: "browser_evaluate",
+              arguments: {
+                target: ref,
+                element: `snapshot ref ${ref}`,
+                function: LIST_SELECT_OPTIONS_FN,
+              },
+            }),
+          );
+          const json = extractJsonObject(raw);
+          if (json) {
+            const parsed = JSON.parse(json) as { options?: SelectOptionMeta[] };
+            if (Array.isArray(parsed.options)) opts = parsed.options;
+          }
+        } catch {
+          /* fall through with requested value */
+        }
+        const selectValue = resolveSelectOption(opts, value)?.value ?? value;
+        return call(client, "browser_select_option", {
           target: ref,
-          values: [value],
-        }),
-      );
+          values: [selectValue],
+        });
+      });
     },
-
     pressKey(key: string) {
       return withClient((client) =>
         call(client, "browser_press_key", { key }),
@@ -531,6 +643,19 @@ export function getBrowser(): BrowserController {
           candidates,
         };
       });
+    },
+
+    async screenshot(filePath: string): Promise<boolean> {
+      try {
+        return await withLock(async () => {
+          await getClient();
+          const page = await getActiveCdpPage(g.ruskLastPageUrl);
+          await page.screenshot({ path: filePath, fullPage: true });
+          return true;
+        });
+      } catch {
+        return false;
+      }
     },
   };
 }

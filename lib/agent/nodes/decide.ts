@@ -1,6 +1,8 @@
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { z } from "zod";
+import { appendRunEvent } from "../../evidence/run-log";
+import { sanitizeToolArguments } from "../../evidence/sanitize";
 import type { ToolRegistry } from "../../tools/registry";
 import { AgentDecisionSchema, normalizeDecision } from "../decision";
 import {
@@ -247,6 +249,32 @@ export function createDecideNode(
       "[agent decision]",
       JSON.stringify(decision, null, 2),
     );
+
+    if (decision.type === "tool" && decision.call) {
+      await appendRunEvent(state.runId, {
+        event: "decision",
+        stepIndex: state.stepCount + 1,
+        action: decision.call.name,
+        target: sanitizeToolArguments(
+          decision.call.name,
+          decision.call.arguments,
+        ),
+      });
+    } else if (decision.type === "finish") {
+      await appendRunEvent(state.runId, {
+        event: "decision",
+        stepIndex: state.stepCount,
+        action: "finish",
+        reason: decision.reason ?? null,
+      });
+    } else if (decision.type === "human") {
+      await appendRunEvent(state.runId, {
+        event: "decision",
+        stepIndex: state.stepCount,
+        action: "human",
+        requestType: decision.request?.type ?? null,
+      });
+    }
 
     return { decision };
   };
