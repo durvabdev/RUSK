@@ -7,7 +7,7 @@ import { createRegistry } from "./registry.ts";
 function mockBrowser(): BrowserController {
   return {
     async observe() {
-      return { snapshot: "mock" };
+      return { snapshot: "mock", elements: [] };
     },
     async navigate(url) {
       return { ok: true, text: `navigated:${url}` };

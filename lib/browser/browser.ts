@@ -1,7 +1,16 @@
+import type { DomCandidate } from "./dom-inspect";
+
+/**
+ * CDP-derived page semantics included with every observation. These are not
+ * MCP targets: the actor must ground an action independently in the snapshot.
+ */
+export type ObservedElement = Omit<DomCandidate, "rect" | "selector">;
+
 export type BrowserObservation = {
   url?: string;
   title?: string;
   snapshot: string;
+  elements: ObservedElement[];
 };
 
 export type BrowserActionResult = {

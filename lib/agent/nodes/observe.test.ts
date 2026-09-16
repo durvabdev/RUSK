@@ -11,6 +11,7 @@ function mockBrowser(): BrowserController {
         url: "https://example.com",
         title: "Example",
         snapshot: '- heading "Example"',
+        elements: [],
       };
     },
     async navigate() {
@@ -57,6 +58,7 @@ test("observeNode returns only observation", async () => {
       url: "https://example.com",
       title: "Example",
       snapshot: '- heading "Example"',
+      elements: [],
     },
   });
   assert.equal("history" in update, false);
