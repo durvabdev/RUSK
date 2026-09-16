@@ -29,6 +29,10 @@ export type ElementInspection = {
   placeholder: string | null;
   autocomplete: string | null;
   testId: string | null;
+  /** From data-risk when present (demo apps). */
+  risk: "safe" | "reversible_mutation" | "risky" | null;
+  /** From data-action-category when present. */
+  actionCategory: string | null;
   contentEditable: boolean;
   disabled: boolean;
   readOnly: boolean;

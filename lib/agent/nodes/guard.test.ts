@@ -4,7 +4,7 @@ import type { BrowserController, ElementInspection } from "../../browser/browser
 import type { DomCandidate } from "../../browser/dom-inspect.ts";
 import { CREDENTIAL_HUMAN_REQUEST } from "../auth-form.ts";
 import type { AgentState } from "../state.ts";
-import { createGuardNode } from "./guard.ts";
+import { createGuardNode, POLICY_APPROVAL_REQUEST } from "./guard.ts";
 
 function inspection(
   partial: Partial<ElementInspection>,
@@ -19,6 +19,9 @@ function inspection(
     href: null,
     placeholder: null,
     autocomplete: null,
+    testId: null,
+    risk: null,
+    actionCategory: null,
     contentEditable: false,
     disabled: false,
     readOnly: false,
@@ -51,12 +54,13 @@ function candidate(partial: Partial<DomCandidate>): DomCandidate {
 
 function baseState(
   call: { name: string; arguments: Record<string, unknown> },
+  url = "https://dough-credit-union.vercel.app/login",
 ): AgentState {
   return {
     runId: "run-1",
     goal: "Look up member 002010",
     observation: {
-      url: "https://example.com/login",
+      url,
       title: "Login",
       snapshot: "form",
     },
@@ -90,7 +94,10 @@ test("typing into detected username field is blocked", async () => {
   } as unknown as BrowserController;
 
   const update = await createGuardNode(browser)(
-    baseState({ name: "type", arguments: { ref: "e1", text: "002010" } }),
+    baseState(
+      { name: "type", arguments: { ref: "e1", text: "002010" } },
+      "https://example.com/login",
+    ),
   );
 
   assert.equal(update.decision?.type, "human");
@@ -118,10 +125,13 @@ test("typing into detected password field is blocked", async () => {
   } as unknown as BrowserController;
 
   const update = await createGuardNode(browser)(
-    baseState({
-      name: "type",
-      arguments: { ref: "e2", text: "invented-secret" },
-    }),
+    baseState(
+      {
+        name: "type",
+        arguments: { ref: "e2", text: "invented-secret" },
+      },
+      "https://example.com/login",
+    ),
   );
 
   assert.equal(update.decision?.type, "human");
@@ -151,7 +161,10 @@ test("task value like 002010 is still blocked on username field", async () => {
   } as unknown as BrowserController;
 
   const update = await createGuardNode(browser)(
-    baseState({ name: "type", arguments: { ref: "e3", text: "002010" } }),
+    baseState(
+      { name: "type", arguments: { ref: "e3", text: "002010" } },
+      "https://example.com/login",
+    ),
   );
 
   assert.equal(update.decision?.type, "human");
@@ -161,7 +174,7 @@ test("normal non-auth text field still executes (guard no-op)", async () => {
   const browser = {
     async inspectDom() {
       return {
-        url: "https://example.com/search",
+        url: "https://dough-credit-union.vercel.app/search",
         title: "Search",
         candidates: [
           candidate({ placeholder: "Search member", inputType: "text" }),
@@ -169,15 +182,22 @@ test("normal non-auth text field still executes (guard no-op)", async () => {
       };
     },
     async inspectElement() {
-      throw new Error("should not inspect when not an auth form");
+      return inspection({
+        name: "q",
+        type: "text",
+        placeholder: "Search member",
+      });
     },
   } as unknown as BrowserController;
 
   const update = await createGuardNode(browser)(
-    baseState({
-      name: "type",
-      arguments: { ref: "e9", text: "002010" },
-    }),
+    baseState(
+      {
+        name: "type",
+        arguments: { ref: "e9", text: "002010" },
+      },
+      "https://dough-credit-union.vercel.app/search",
+    ),
   );
 
   assert.deepEqual(update, {});
@@ -188,10 +208,16 @@ test("non-type tools pass through the guard", async () => {
     async inspectDom() {
       throw new Error("should not inspect");
     },
+    async inspectElement() {
+      return inspection({ role: "button", name: "Go", risk: null });
+    },
   } as unknown as BrowserController;
 
   const update = await createGuardNode(browser)(
-    baseState({ name: "click", arguments: { ref: "e1" } }),
+    baseState(
+      { name: "click", arguments: { ref: "e1" } },
+      "https://dough-credit-union.vercel.app/",
+    ),
   );
 
   assert.deepEqual(update, {});
@@ -215,10 +241,66 @@ test("auth form + inspectElement failure still blocks credential typing", async 
   } as unknown as BrowserController;
 
   const update = await createGuardNode(browser)(
-    baseState({ name: "type", arguments: { ref: "e1", text: "002010" } }),
+    baseState(
+      { name: "type", arguments: { ref: "e1", text: "002010" } },
+      "https://example.com/login",
+    ),
   );
 
   assert.equal(update.decision?.type, "human");
   assert.equal(update.humanRequest?.type, "credential");
   assert.equal("history" in update, false);
+});
+
+test("risky element requires human approval", async () => {
+  const browser = {
+    async inspectDom() {
+      return {
+        url: "https://dough-credit-union.vercel.app/transfer",
+        title: "Transfer",
+        candidates: [candidate({ name: "confirm", inputType: "submit" })],
+      };
+    },
+    async inspectElement() {
+      return inspection({
+        tag: "button",
+        role: "button",
+        name: "Confirm transfer",
+        risk: "risky",
+      });
+    },
+  } as unknown as BrowserController;
+
+  const update = await createGuardNode(browser)(
+    baseState(
+      { name: "click", arguments: { ref: "e1" } },
+      "https://dough-credit-union.vercel.app/transfer",
+    ),
+  );
+
+  assert.equal(update.decision?.type, "human");
+  assert.deepEqual(update.decision?.request, POLICY_APPROVAL_REQUEST);
+  assert.equal(update.status, "waiting_for_human");
+});
+
+test("disallowed origin hard-denies", async () => {
+  const browser = {
+    async inspectDom() {
+      throw new Error("should not inspect");
+    },
+    async inspectElement() {
+      return inspection({ role: "button", name: "Go" });
+    },
+  } as unknown as BrowserController;
+
+  const update = await createGuardNode(browser)(
+    baseState(
+      { name: "click", arguments: { ref: "e1" } },
+      "https://evil.example/",
+    ),
+  );
+
+  assert.equal(update.status, "failed");
+  assert.match(String(update.error), /origin_blocked/);
+  assert.equal(update.decision?.type, "finish");
 });

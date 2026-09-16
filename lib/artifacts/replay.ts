@@ -5,6 +5,11 @@ import {
   failureScreenshotPath,
   writeRunMeta,
 } from "../evidence/run-log";
+import { getPolicyConfig } from "../policy/config";
+import {
+  evaluateActionPolicy,
+  type PolicyElementMeta,
+} from "../policy/evaluate";
 import type {
   ArtifactCondition,
   ArtifactRunResult,
@@ -39,6 +44,54 @@ function resolveValue(
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function policyFailure(
+  code: string,
+  message: string,
+  context?: ReplayContext,
+): ArtifactRunResult {
+  return {
+    status: "failure",
+    code,
+    message,
+    context,
+  };
+}
+
+async function elementMetaForPolicy(
+  browser: BrowserController,
+  ref: string,
+): Promise<PolicyElementMeta | null> {
+  try {
+    const el = await browser.inspectElement(ref);
+    return {
+      risk: el.risk,
+      actionCategory: el.actionCategory,
+      role: el.role,
+      name: el.name,
+      href: el.href,
+      type: el.type,
+      text: el.text,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function checkPolicy(input: {
+  action: string;
+  currentUrl?: string | null;
+  navigateUrl?: string | null;
+  element?: PolicyElementMeta | null;
+  stepIndex?: number;
+}): ArtifactRunResult | null {
+  const decision = evaluateActionPolicy(input, getPolicyConfig());
+  if (decision.ok) return null;
+  return policyFailure(decision.code, decision.message, {
+    stepIndex: input.stepIndex,
+    action: input.action,
+  });
 }
 
 /** Sanitized snapshot summary — no input values / typed secrets. */
@@ -312,7 +365,16 @@ export async function replayArtifact(
     }
   }
 
+  {
+    const blocked = checkPolicy({
+      action: "navigate",
+      navigateUrl: parsed.startUrl,
+      stepIndex: 0,
+    });
+    if (blocked) return done(blocked);
+  }
   await browser.navigate(parsed.startUrl);
+  let currentUrl = parsed.startUrl;
 
   let stepIndex = 0;
   for (const step of parsed.steps) {
@@ -325,7 +387,14 @@ export async function replayArtifact(
         action: "navigate",
         target: { url: step.url },
       });
+      const blocked = checkPolicy({
+        action: "navigate",
+        navigateUrl: step.url,
+        stepIndex,
+      });
+      if (blocked) return done(blocked);
       await browser.navigate(step.url);
+      currentUrl = step.url;
       await appendRunEvent(runId, {
         event: "step_finished",
         stepIndex,
@@ -341,6 +410,12 @@ export async function replayArtifact(
         action: "press_key",
         target: { key: step.key },
       });
+      const blocked = checkPolicy({
+        action: "press_key",
+        currentUrl,
+        stepIndex,
+      });
+      if (blocked) return done(blocked);
       await browser.pressKey(step.key);
       await appendRunEvent(runId, {
         event: "step_finished",
@@ -435,6 +510,18 @@ export async function replayArtifact(
       stepIndex,
       result: "resolved",
     });
+
+    currentUrl = polled.observation.url ?? currentUrl;
+    const element = await elementMetaForPolicy(browser, polled.ref);
+    {
+      const blocked = checkPolicy({
+        action: step.action,
+        currentUrl,
+        element,
+        stepIndex,
+      });
+      if (blocked) return done(blocked);
+    }
 
     if (step.action === "click") {
       const result = await browser.click(polled.ref);

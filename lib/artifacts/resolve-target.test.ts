@@ -15,6 +15,8 @@ function inspection(partial: Partial<ElementInspection> = {}): ElementInspection
     placeholder: null,
     autocomplete: null,
     testId: null,
+    risk: null,
+    actionCategory: null,
     contentEditable: false,
     disabled: false,
     readOnly: false,

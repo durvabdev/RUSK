@@ -18,3 +18,7 @@ Expected files after a successful export:
 - `replay-exception.jsonl`
 - `replay-exception.png` (optional)
 - `README.md` (overwritten with run ids)
+
+## Policy contract (demo apps)
+
+Financial commit controls should set `data-risk="risky"` (optional `data-action-category`). RUSK trusts these attributes when present; keyword heuristics are a brittle fallback only.

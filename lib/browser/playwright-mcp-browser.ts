@@ -72,6 +72,13 @@ export const INSPECT_ELEMENT_FN = String.raw`(element) => {
     placeholder: trim(element.getAttribute("placeholder") || element.placeholder),
     autocomplete: trim(element.getAttribute("autocomplete") || element.autocomplete),
     testId: trim(element.getAttribute("data-testid")),
+    risk: (() => {
+      const r = element.getAttribute("data-risk");
+      return r === "safe" || r === "reversible_mutation" || r === "risky"
+        ? r
+        : null;
+    })(),
+    actionCategory: trim(element.getAttribute("data-action-category")),
     contentEditable:
       element.isContentEditable === true ||
       element.getAttribute("contenteditable") === "true",

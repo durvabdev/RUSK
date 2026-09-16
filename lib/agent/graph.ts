@@ -40,7 +40,7 @@ type DecideRoute =
   | "max_steps"
   | "observe";
 
-type GuardRoute = "human" | "execute";
+type GuardRoute = "human" | "execute" | "deny";
 
 type HumanResume =
   | {
@@ -89,7 +89,10 @@ export function createAgentGraph({
   }
 
   function routeGuard(state: AgentState): GuardRoute {
-    // Guard rewrites a blocked credential tool decision
+    if (state.status === "failed") {
+      return "deny";
+    }
+    // Guard rewrites a blocked credential/risky tool decision
     // into decision.type === "human".
     if (state.decision?.type === "human") {
       return "human";
@@ -173,12 +176,13 @@ export function createAgentGraph({
     .addConditionalEdges("guard", routeGuard, {
       human: "human",
       execute: "execute",
+      deny: END,
     })
 
     .addEdge("execute", "observe")
 
     // Critical for HITL: after the human resumes, re-observe the live browser.
-    // Never replay the blocked credential action.
+    // Never replay the blocked credential/risky action.
     .addEdge("human", "observe")
 
     .addEdge("finish", "compile_artifact")

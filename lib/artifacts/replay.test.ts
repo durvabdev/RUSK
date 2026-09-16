@@ -132,6 +132,8 @@ function inspection(partial: Partial<ElementInspection>): ElementInspection {
     placeholder: null,
     autocomplete: null,
     testId: null,
+    risk: null,
+    actionCategory: null,
     contentEditable: false,
     disabled: false,
     readOnly: false,
@@ -314,15 +316,15 @@ test("known member_not_found condition returns business_outcome", async () => {
   const browser = baseBrowser({
     observe: async () => {
       if (phase === "home") {
-        return { snapshot: HOME_SNAPSHOT, elements: [], url: "https://example.com/" };
+        return { snapshot: HOME_SNAPSHOT, elements: [], url: "https://dough-credit-union.vercel.app/" };
       }
       if (phase === "search") {
-        return { snapshot: SEARCH_SNAPSHOT, elements: [], url: "https://example.com/search" };
+        return { snapshot: SEARCH_SNAPSHOT, elements: [], url: "https://dough-credit-union.vercel.app/search" };
       }
       return {
         snapshot: `- text: "No members found"`,
         elements: [],
-        url: "https://example.com/search",
+        url: "https://dough-credit-union.vercel.app/search",
       };
     },
     click: async (ref) => {
@@ -377,7 +379,7 @@ test("delayed target appears after polls then succeeds", async () => {
       return {
         snapshot: `- link "Go" [ref=go]`,
         elements: [],
-        url: "https://example.com/",
+        url: "https://dough-credit-union.vercel.app/",
       };
     },
     inspectElement: async (ref) =>
@@ -396,7 +398,7 @@ test("delayed target appears after polls then succeeds", async () => {
     name: "delay_target",
     description: "d",
     sourceRunId: "r",
-    startUrl: "https://example.com/",
+    startUrl: "https://dough-credit-union.vercel.app/",
     requiresAuthenticatedSession: false,
     inputs: {},
     steps: [{ action: "click", target: { text: "Go" } }],
@@ -418,7 +420,7 @@ test("target remains missing returns recoverable", async () => {
     observe: async () => ({
       snapshot: `- heading "Empty" [ref=h]`,
       elements: [],
-      url: "https://example.com/",
+      url: "https://dough-credit-union.vercel.app/",
     }),
     inspectElement: async () =>
       inspection({
@@ -434,7 +436,7 @@ test("target remains missing returns recoverable", async () => {
     name: "missing_target",
     description: "d",
     sourceRunId: "r",
-    startUrl: "https://example.com/",
+    startUrl: "https://dough-credit-union.vercel.app/",
     requiresAuthenticatedSession: false,
     inputs: {},
     steps: [{ action: "click", target: { text: "Never" } }],
@@ -462,7 +464,7 @@ test("target ambiguous fails immediately without polling", async () => {
 - link "Go" [ref=b]
 `,
         elements: [],
-        url: "https://example.com/",
+        url: "https://dough-credit-union.vercel.app/",
       };
     },
     inspectElement: async () =>
@@ -481,7 +483,7 @@ test("target ambiguous fails immediately without polling", async () => {
     name: "ambiguous",
     description: "d",
     sourceRunId: "r",
-    startUrl: "https://example.com/",
+    startUrl: "https://dough-credit-union.vercel.app/",
     requiresAuthenticatedSession: false,
     inputs: {},
     steps: [{ action: "click", target: { text: "Go" } }],
@@ -522,7 +524,7 @@ test("delayed checkpoint eventually passes", async () => {
       return {
         snapshot: `- heading "Ready" [ref=h]`,
         elements: [],
-        url: "https://example.com/ready",
+        url: "https://dough-credit-union.vercel.app/ready",
       };
     },
     inspectElement: async (ref) =>
@@ -541,7 +543,7 @@ test("delayed checkpoint eventually passes", async () => {
     name: "checkpoint_ok",
     description: "d",
     sourceRunId: "r",
-    startUrl: "https://example.com/",
+    startUrl: "https://dough-credit-union.vercel.app/",
     requiresAuthenticatedSession: false,
     inputs: {},
     steps: [
@@ -569,7 +571,7 @@ test("checkpoint timeout returns checkpoint_failed", async () => {
       snapshot: `- link "Next" [ref=next]
 - heading "Loading" [ref=h]`,
       elements: [],
-      url: "https://example.com/",
+      url: "https://dough-credit-union.vercel.app/",
     }),
     inspectElement: async (ref) =>
       inspection({
@@ -587,7 +589,7 @@ test("checkpoint timeout returns checkpoint_failed", async () => {
     name: "checkpoint_fail",
     description: "d",
     sourceRunId: "r",
-    startUrl: "https://example.com/",
+    startUrl: "https://dough-credit-union.vercel.app/",
     requiresAuthenticatedSession: false,
     inputs: {},
     steps: [
@@ -606,4 +608,81 @@ test("checkpoint timeout returns checkpoint_failed", async () => {
   assert.equal(result.status, "failure");
   if (result.status !== "failure") return;
   assert.equal(result.code, "checkpoint_failed");
+});
+
+test("replay blocks disallowed startUrl before navigate", async () => {
+  let navigated = false;
+  const browser = baseBrowser({
+    navigate: async () => {
+      navigated = true;
+      return { ok: true };
+    },
+  });
+
+  const artifact: WorkflowArtifact = {
+    id: "bad-origin",
+    version: 1,
+    kind: "browser_workflow",
+    name: "bad_origin",
+    description: "d",
+    sourceRunId: "r",
+    startUrl: "https://evil.example/",
+    requiresAuthenticatedSession: false,
+    inputs: {},
+    steps: [],
+    outputs: [],
+    conditions: [],
+    createdAt: "2026-09-16T00:00:00.000Z",
+  };
+
+  const result = await replayArtifact(artifact, {}, browser, FAST_POLL);
+  assert.equal(result.status, "failure");
+  if (result.status !== "failure") return;
+  assert.equal(result.code, "origin_blocked");
+  assert.equal(navigated, false);
+});
+
+test("replay cannot bypass risky element policy", async () => {
+  let clicked = false;
+  const browser = baseBrowser({
+    observe: async () => ({
+      snapshot: `- button "Confirm transfer" [ref=go]`,
+      elements: [],
+      url: "https://dough-credit-union.vercel.app/transfer",
+    }),
+    inspectElement: async () =>
+      inspection({
+        role: "button",
+        name: "Confirm transfer",
+        text: "Confirm transfer",
+        risk: "risky",
+        rect: { x: 0, y: 0, width: 20, height: 10 },
+      }),
+    click: async () => {
+      clicked = true;
+      return { ok: true };
+    },
+  });
+
+  const artifact: WorkflowArtifact = {
+    id: "risky-click",
+    version: 1,
+    kind: "browser_workflow",
+    name: "risky_click",
+    description: "d",
+    sourceRunId: "r",
+    startUrl: "https://dough-credit-union.vercel.app/",
+    requiresAuthenticatedSession: false,
+    inputs: {},
+    steps: [{ action: "click", target: { text: "Confirm transfer" } }],
+    outputs: [],
+    conditions: [],
+    createdAt: "2026-09-16T00:00:00.000Z",
+  };
+
+  const result = await replayArtifact(artifact, {}, browser, FAST_POLL);
+  assert.equal(result.status, "failure");
+  if (result.status !== "failure") return;
+  assert.equal(result.code, "policy_requires_human");
+  assert.equal(clicked, false);
 });
