@@ -276,6 +276,16 @@ button:disabled {
   color: var(--accent);
 }
 
+.hitl {
+  margin-top: 0.75rem;
+}
+
+.hitl-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
 @media (max-width: 640px) {
   .wrap {
     padding: 3rem 1.25rem;

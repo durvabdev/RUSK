@@ -28,16 +28,48 @@ async function createRuntime(): Promise<AgentRuntime> {
   const browser = getBrowser();
 
   const model = new ChatOpenAI({
-    model: "gpt-4o-mini",
-    temperature: 0.1,
+    model: "gpt-5.6-terra",
     maxTokens: 1000,
     maxRetries: 3,
     timeout: 10_000,
+    useResponsesApi: true,
     apiKey: process.env.OPENAI_API_KEY,
     configuration: process.env.OPENAI_BASE_URL
       ? { baseURL: process.env.OPENAI_BASE_URL }
       : undefined,
   });
+
+  // #region agent log
+  {
+    const params = (
+      model as unknown as { invocationParams: (o?: object) => Record<string, unknown> }
+    ).invocationParams({});
+    fetch("http://127.0.0.1:7664/ingest/fd9e0927-3b2b-4655-99d8-b10f5823d4d8", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Debug-Session-Id": "78d987",
+      },
+      body: JSON.stringify({
+        sessionId: "78d987",
+        runId: "pre-fix",
+        hypothesisId: "A",
+        location: "lib/agent/runtime.ts:createRuntime",
+        message: "ChatOpenAI responses invocation params",
+        data: {
+          model: "gpt-5.6-terra",
+          useResponsesApi: true,
+          hasTemperatureKey: Object.prototype.hasOwnProperty.call(params, "temperature"),
+          temperature: params.temperature ?? null,
+          max_output_tokens: params.max_output_tokens ?? null,
+          paramKeys: Object.keys(params),
+          baseURLSet: Boolean(process.env.OPENAI_BASE_URL),
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+  }
+  // #endregion
 
   const registry = createRegistry(createBrowserTools(browser));
   const artifactRepository = createArtifactRepository();

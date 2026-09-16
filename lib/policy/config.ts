@@ -5,7 +5,12 @@ export type PolicyAction =
   | "click"
   | "type"
   | "select"
-  | "press_key";
+  | "press_key"
+  | "inspect_element"
+  | "inspect_dom"
+  | "hover"
+  | "go_back"
+  | "scroll";
 
 export type PolicyConfig = {
   allowedOrigins: string[];
@@ -25,6 +30,11 @@ const DEFAULT_ACTIONS: PolicyAction[] = [
   "type",
   "select",
   "press_key",
+  "inspect_element",
+  "inspect_dom",
+  "hover",
+  "go_back",
+  "scroll",
 ];
 
 /** Explicit allowlist only — never derived from user startUrl. */
@@ -50,6 +60,21 @@ export function originOf(url: string | null | undefined): string | null {
     const u = new URL(url);
     if (u.protocol !== "http:" && u.protocol !== "https:") return null;
     return u.origin;
+  } catch {
+    return null;
+  }
+}
+
+/** Resolve absolute or relative URLs against an optional base (current page). */
+export function resolvePolicyUrl(
+  url: string | null | undefined,
+  base?: string | null,
+): string | null {
+  if (!url) return null;
+  try {
+    const u = base ? new URL(url, base) : new URL(url);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    return u.href;
   } catch {
     return null;
   }

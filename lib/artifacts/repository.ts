@@ -41,8 +41,12 @@ export function createArtifactRepository(): ArtifactRepository {
       const artifacts: WorkflowArtifact[] = [];
       for (const name of entries) {
         if (!name.endsWith(".json")) continue;
-        const raw = await fs.readFile(path.join(ARTIFACTS_DIR, name), "utf8");
-        artifacts.push(WorkflowArtifactSchema.parse(JSON.parse(raw)));
+        try {
+          const raw = await fs.readFile(path.join(ARTIFACTS_DIR, name), "utf8");
+          artifacts.push(WorkflowArtifactSchema.parse(JSON.parse(raw)));
+        } catch {
+          // Skip legacy/invalid files (e.g. missing required checkpoint).
+        }
       }
       return artifacts.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     },

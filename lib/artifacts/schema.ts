@@ -138,6 +138,8 @@ export const WorkflowArtifactSchema = z.object({
   steps: z.array(ReplayStepSchema),
   outputs: z.array(ArtifactOutputSchema),
   conditions: z.array(ArtifactConditionSchema).default([]),
+  /** Terminal success signal — required for replay success. */
+  checkpoint: TextPresentSchema,
   createdAt: z.string(),
 });
 

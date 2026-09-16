@@ -281,6 +281,41 @@ test("risky element requires human approval", async () => {
   assert.equal(update.decision?.type, "human");
   assert.deepEqual(update.decision?.request, POLICY_APPROVAL_REQUEST);
   assert.equal(update.status, "waiting_for_human");
+  assert.ok(update.pendingCommit);
+  assert.equal(update.pendingCommit?.toolCall.name, "click");
+  assert.equal(update.pendingCommit?.recordedTarget.name, "Confirm transfer");
+});
+
+test("financial_transaction category interrupts before execute", async () => {
+  let executed = false;
+  const browser = {
+    async inspectDom() {
+      return {
+        url: "https://dough-credit-union.vercel.app/cheques",
+        title: "Cheques",
+        candidates: [],
+      };
+    },
+    async inspectElement() {
+      return inspection({
+        tag: "button",
+        role: "button",
+        name: "Confirm",
+        actionCategory: "financial_transaction",
+      });
+    },
+  } as unknown as BrowserController;
+
+  const update = await createGuardNode(browser)(
+    baseState(
+      { name: "click", arguments: { ref: "e1" } },
+      "https://dough-credit-union.vercel.app/cheques",
+    ),
+  );
+
+  assert.equal(update.decision?.type, "human");
+  assert.equal(update.humanRequest?.type, "approval");
+  assert.equal(executed, false);
 });
 
 test("disallowed origin hard-denies", async () => {

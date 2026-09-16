@@ -10,8 +10,10 @@ type Run = {
   result?: string | null;
   snapshot?: string;
   error?: string;
+  code?: string;
   artifactId?: string;
   artifactError?: string;
+  humanRequest?: { type: string; message: string } | null;
 };
 
 type ArtifactInputDef = {
@@ -82,6 +84,7 @@ export default function Home() {
   const [theme, setTheme] = useState<"light" | "dark">("dark");
   const [formError, setFormError] = useState("");
   const [running, setRunning] = useState(false);
+  const [hitlBusy, setHitlBusy] = useState(false);
 
   const [allArtifacts, setAllArtifacts] = useState<ArtifactSummary[]>([]);
   const [artifactsLoading, setArtifactsLoading] = useState(false);
@@ -289,16 +292,62 @@ export default function Home() {
         body: JSON.stringify({ url, goal: nextGoal }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setFormError(data.error || `Request failed (${res.status})`);
+      if (!res.ok && data.status !== "waiting_for_human") {
+        setFormError(
+          data.error || data.code
+            ? `${data.code ? `${data.code}: ` : ""}${data.error || `Request failed (${res.status})`}`
+            : `Request failed (${res.status})`,
+        );
+        if (data.runId) {
+          setRun({
+            runId: String(data.runId),
+            url,
+            goal: nextGoal,
+            status: String(data.status || "failed"),
+            error: data.error ? String(data.error) : undefined,
+            code: data.code ? String(data.code) : undefined,
+          });
+        }
         return;
       }
-      setRun(data);
+      setRun(data as Run);
       if (data.artifactId) {
         await loadArtifacts();
       }
     } finally {
       setRunning(false);
+    }
+  }
+
+  async function onHitl(action: "resume" | "cancel") {
+    if (!run?.runId) return;
+    setHitlBusy(true);
+    setFormError("");
+    try {
+      const res = await fetch(`/api/runs/${run.runId}/resume`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setFormError(data.error || `Resume failed (${res.status})`);
+        return;
+      }
+      setRun((prev) => ({
+        ...(prev ?? { runId: run.runId, url: run.url, goal: run.goal }),
+        ...(data as Run),
+        runId: String(data.runId || run.runId),
+        url: prev?.url ?? run.url,
+        goal: prev?.goal ?? run.goal,
+      }));
+      if (data.artifactId) {
+        await loadArtifacts();
+      }
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setHitlBusy(false);
     }
   }
 
@@ -442,6 +491,37 @@ export default function Home() {
           <p className="value">{run.runId}</p>
           <p className="label">Status</p>
           <p className="value">{run.status}</p>
+          {run.status === "waiting_for_human" && run.humanRequest ? (
+            <div className="hitl">
+              <p className="label">Human required ({run.humanRequest.type})</p>
+              <p className="value">{run.humanRequest.message}</p>
+              <p className="muted">
+                Use the already-open browser while paused, then Resume or Cancel.
+              </p>
+              <div className="hitl-actions">
+                <button
+                  type="button"
+                  disabled={hitlBusy}
+                  onClick={() => void onHitl("resume")}
+                >
+                  {hitlBusy ? "Working…" : "Resume"}
+                </button>
+                <button
+                  type="button"
+                  disabled={hitlBusy}
+                  onClick={() => void onHitl("cancel")}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : null}
+          {run.code ? (
+            <>
+              <p className="label">Code</p>
+              <p className="value">{run.code}</p>
+            </>
+          ) : null}
           {run.result ? (
             <>
               <p className="label">Result</p>

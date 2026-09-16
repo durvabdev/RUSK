@@ -84,6 +84,7 @@ function checkPolicy(input: {
   currentUrl?: string | null;
   navigateUrl?: string | null;
   element?: PolicyElementMeta | null;
+  key?: string | null;
   stepIndex?: number;
 }): ArtifactRunResult | null {
   const decision = evaluateActionPolicy(input, getPolicyConfig());
@@ -413,6 +414,7 @@ export async function replayArtifact(
       const blocked = checkPolicy({
         action: "press_key",
         currentUrl,
+        key: step.key,
         stepIndex,
       });
       if (blocked) return done(blocked);
@@ -695,26 +697,53 @@ export async function replayArtifact(
     }
   }
 
-  const finalObservation = await browser.observe();
-  const matched = matchCondition(finalObservation.snapshot, conditions);
-  if (matched) {
+  const cp = await waitForCheckpoint(
+    browser,
+    parsed.checkpoint,
+    conditions,
+    poll,
+  );
+  if (cp.kind === "condition") {
     await appendRunEvent(runId, {
       event: "condition_detected",
-      class: matched.class,
-      code: matched.code,
+      class: cp.condition.class,
+      code: cp.condition.code,
     });
     return done(
       conditionResult(
-        matched,
-        contextFrom({ action: "extract_outputs" }, finalObservation),
+        cp.condition,
+        contextFrom({ action: "checkpoint" }, cp.observation),
       ),
     );
   }
+  if (cp.kind === "timeout") {
+    await appendRunEvent(runId, {
+      event: "checkpoint",
+      result: "failed",
+    });
+    return done({
+      status: "failure",
+      code: "checkpoint_failed",
+      message: `Checkpoint not met: text_present "${parsed.checkpoint.text}"`,
+      context: contextFrom(
+        {
+          action: "checkpoint",
+          expected: `checkpoint text_present:${parsed.checkpoint.text}`,
+        },
+        cp.observation,
+      ),
+    });
+  }
+
+  await appendRunEvent(runId, {
+    event: "checkpoint",
+    result: "passed",
+  });
 
   const outputs: Record<string, string> = {};
 
   for (const spec of parsed.outputs) {
-    const extracted = extractOutput(finalObservation.snapshot, spec);
+    const extracted = extractOutput(cp.observation.snapshot, spec);
     if (!extracted.ok) {
       return done({
         status: "failure",
@@ -725,7 +754,7 @@ export async function replayArtifact(
             action: "extract_outputs",
             expected: `output:${spec.name}`,
           },
-          finalObservation,
+          cp.observation,
         ),
       });
     }

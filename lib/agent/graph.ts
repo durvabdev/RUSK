@@ -18,6 +18,7 @@ import {
 } from "./state";
 
 import { createObserveNode } from "./nodes/observe";
+import { createCheckProgressNode } from "./nodes/check-progress";
 import { createDecideNode } from "./nodes/decide";
 import { createGuardNode } from "./nodes/guard";
 import { createExecuteNode } from "./nodes/execute";
@@ -58,10 +59,15 @@ export function createAgentGraph({
   maxSteps = DEFAULT_MAX_STEPS,
 }: CreateAgentGraphOptions) {
   const observeNode = createObserveNode(browser);
+  const checkProgressNode = createCheckProgressNode();
   const decideNode = createDecideNode(model, registry);
   const guardNode = createGuardNode(browser);
   const executeNode = createExecuteNode(registry, browser);
   const compileArtifactNode = createCompileArtifactNode(artifactRepository);
+
+  function routeProgress(state: AgentState): "human" | "decide" {
+    return state.progressStuck ? "human" : "decide";
+  }
 
   function routeDecision(state: AgentState): DecideRoute {
     const decision = state.decision;
@@ -142,6 +148,8 @@ export function createAgentGraph({
       status: "running",
       humanRequest: null,
       error: null,
+      progressStuck: false,
+      noProgressCount: 0,
     };
   }
 
@@ -154,6 +162,7 @@ export function createAgentGraph({
 
   const builder = new StateGraph(AgentStateSchema)
     .addNode("observe", observeNode)
+    .addNode("check_progress", checkProgressNode)
     .addNode("decide", decideNode)
     .addNode("guard", guardNode)
     .addNode("execute", executeNode)
@@ -163,7 +172,11 @@ export function createAgentGraph({
     .addNode("max_steps", maxStepsNode)
 
     .addEdge(START, "observe")
-    .addEdge("observe", "decide")
+    .addEdge("observe", "check_progress")
+    .addConditionalEdges("check_progress", routeProgress, {
+      human: "human",
+      decide: "decide",
+    })
 
     .addConditionalEdges("decide", routeDecision, {
       guard: "guard",

@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
 
+import {
+  interruptFromInvokeResult,
+  interruptFromThrown,
+  invokeConfig,
+  waitingResponse,
+} from "@/lib/agent/hitl";
 import { getAgentRuntime } from "@/lib/agent/runtime";
 import { writeRunMeta } from "@/lib/evidence/run-log";
+import { evaluateActionPolicy } from "@/lib/policy/evaluate";
 
 export const runtime = "nodejs";
 
@@ -56,6 +63,24 @@ export async function POST(request: Request) {
   const runId = crypto.randomUUID();
   const recordArtifact = process.env.RUSK_RECORD_ARTIFACTS !== "0";
 
+  const originDecision = evaluateActionPolicy({
+    action: "navigate",
+    navigateUrl: url,
+  });
+  if (!originDecision.ok) {
+    return NextResponse.json(
+      {
+        runId,
+        url,
+        goal,
+        status: "failed",
+        code: originDecision.code,
+        error: originDecision.message,
+      },
+      { status: 403 },
+    );
+  }
+
   try {
     const { graph, browser } =
       await getAgentRuntime();
@@ -64,36 +89,55 @@ export async function POST(request: Request) {
 
     await browser.navigate(url);
 
-    const result = await graph.invoke(
-      {
-        runId,
-        goal,
-        startUrl: url,
-        recordArtifact,
-      },
-      {
-        recursionLimit: 100,
-        configurable: {
-          thread_id: runId,
-        },
-        runName: "rusk-agent-run",
-        tags: ["rusk", "browser-agent"],
-        metadata: {
+    let result: unknown;
+    try {
+      result = await graph.invoke(
+        {
           runId,
-          targetUrl: url,
+          goal,
+          startUrl: url,
+          recordArtifact,
         },
-      },
-    );
+        {
+          ...invokeConfig(runId),
+          metadata: {
+            runId,
+            targetUrl: url,
+          },
+        },
+      );
+    } catch (err) {
+      const interrupted = interruptFromThrown(err);
+      if (interrupted) {
+        const waiting = await waitingResponse(runId, interrupted);
+        return NextResponse.json(
+          { ...waiting, url, goal },
+          { status: 201 },
+        );
+      }
+      throw err;
+    }
+
+    const interrupted = interruptFromInvokeResult(result);
+    if (interrupted) {
+      const waiting = await waitingResponse(runId, interrupted);
+      return NextResponse.json(
+        { ...waiting, url, goal },
+        { status: 201 },
+      );
+    }
+
+    const state = result as Record<string, unknown>;
 
     return NextResponse.json(
       {
-        ...result,
+        ...state,
         runId,
         url,
         goal,
-        ...(result.artifactId ? { artifactId: result.artifactId } : {}),
-        ...(result.artifactError
-          ? { artifactError: result.artifactError }
+        ...(state.artifactId ? { artifactId: state.artifactId } : {}),
+        ...(state.artifactError
+          ? { artifactError: state.artifactError }
           : {}),
       },
       { status: 201 },

@@ -36,6 +36,18 @@ function toolUrl(arguments_: unknown): string | null {
   return typeof url === "string" && url.length > 0 ? url : null;
 }
 
+function toolKey(arguments_: unknown): string | null {
+  if (
+    typeof arguments_ !== "object" ||
+    arguments_ === null ||
+    !("key" in arguments_)
+  ) {
+    return null;
+  }
+  const key = (arguments_ as { key: unknown }).key;
+  return typeof key === "string" && key.length > 0 ? key : null;
+}
+
 export const POLICY_APPROVAL_REQUEST = {
   type: "approval" as const,
   message:
@@ -111,23 +123,48 @@ export function createGuardNode(browser: BrowserController) {
     }
 
     // --- Shared action policy (before any execute) ---
-    let element: PolicyElementMeta | null = null;
+    let recordedFromInspect: {
+      role: string | null;
+      name: string | null;
+      text: string | null;
+      href: string | null;
+      type: string | null;
+      testId: string | null;
+      placeholder: string | null;
+      risk: string | null;
+      actionCategory: string | null;
+    } | null = null;
+
     if (ref && ["click", "type", "select"].includes(call.name)) {
       try {
         const inspected = await browser.inspectElement(ref);
-        element = {
-          risk: inspected.risk,
-          actionCategory: inspected.actionCategory,
+        recordedFromInspect = {
           role: inspected.role,
           name: inspected.name,
+          text: inspected.text,
           href: inspected.href,
           type: inspected.type,
-          text: inspected.text,
+          testId: inspected.testId,
+          placeholder: inspected.placeholder,
+          risk: inspected.risk,
+          actionCategory: inspected.actionCategory,
         };
       } catch {
-        element = null;
+        recordedFromInspect = null;
       }
     }
+
+    const element: PolicyElementMeta | null = recordedFromInspect
+      ? {
+          risk: recordedFromInspect.risk as PolicyElementMeta["risk"],
+          actionCategory: recordedFromInspect.actionCategory,
+          role: recordedFromInspect.role,
+          name: recordedFromInspect.name,
+          href: recordedFromInspect.href,
+          type: recordedFromInspect.type,
+          text: recordedFromInspect.text,
+        }
+      : null;
 
     const policy = evaluateActionPolicy(
       {
@@ -136,6 +173,7 @@ export function createGuardNode(browser: BrowserController) {
         navigateUrl:
           call.name === "navigate" ? toolUrl(call.arguments) : null,
         element,
+        key: call.name === "press_key" ? toolKey(call.arguments) : null,
       },
       getPolicyConfig(),
     );
@@ -145,6 +183,35 @@ export function createGuardNode(browser: BrowserController) {
     }
 
     if (policy.code === "policy_requires_human") {
+      const pendingCommit =
+        recordedFromInspect &&
+        ["click", "type", "select"].includes(call.name)
+          ? {
+              toolCall: { name: call.name, arguments: call.arguments },
+              recordedTarget: {
+                ...(ref ? { ref } : {}),
+                ...(recordedFromInspect.testId
+                  ? { testId: recordedFromInspect.testId }
+                  : {}),
+                ...(recordedFromInspect.role
+                  ? { role: recordedFromInspect.role }
+                  : {}),
+                ...(recordedFromInspect.name
+                  ? { name: recordedFromInspect.name }
+                  : {}),
+                ...(recordedFromInspect.text
+                  ? { text: recordedFromInspect.text }
+                  : {}),
+                ...(recordedFromInspect.href
+                  ? { href: recordedFromInspect.href }
+                  : {}),
+                ...(recordedFromInspect.placeholder
+                  ? { placeholder: recordedFromInspect.placeholder }
+                  : {}),
+              },
+            }
+          : null;
+
       return {
         decision: {
           type: "human",
@@ -154,6 +221,7 @@ export function createGuardNode(browser: BrowserController) {
         },
         humanRequest: POLICY_APPROVAL_REQUEST,
         status: "waiting_for_human",
+        ...(pendingCommit ? { pendingCommit } : {}),
       };
     }
 

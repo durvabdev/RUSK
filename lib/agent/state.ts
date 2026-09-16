@@ -33,6 +33,8 @@ export const BrowserObservationSchema = z.object({
   elements: z.array(ObservedElementSchema).default(() => []),
 });
 
+export type BrowserObservation = z.infer<typeof BrowserObservationSchema>;
+
 const ToolCallSchema = z.object({
   name: z.string(),
   arguments: z.unknown(),
@@ -79,6 +81,21 @@ export const AgentStateSchema = new StateSchema({
   error: z.string().nullable().optional(),
   artifactId: z.string().optional(),
   artifactError: z.string().optional(),
+  /**
+   * Policy-blocked tool intended for human completion (HITL).
+   * Compile may emit this as the final step when it never executed.
+   */
+  pendingCommit: z
+    .object({
+      toolCall: ToolCallSchema,
+      recordedTarget: RecordedTargetSchema,
+    })
+    .nullable()
+    .optional(),
+  /** Last ≤3 observation signatures for no-progress detection. */
+  observationSignatures: z.array(z.string()).default(() => []),
+  noProgressCount: z.number().default(0),
+  progressStuck: z.boolean().default(false),
 });
 
 export type AgentState = typeof AgentStateSchema.State;

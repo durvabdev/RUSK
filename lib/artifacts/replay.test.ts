@@ -83,6 +83,7 @@ function lookUpMemberArtifact(): WorkflowArtifact {
       },
     ],
     conditions: [],
+    checkpoint: { kind: "text_present", text: "Member ID" },
     createdAt: "2026-09-16T00:00:00.000Z",
   };
 }
@@ -404,6 +405,7 @@ test("delayed target appears after polls then succeeds", async () => {
     steps: [{ action: "click", target: { text: "Go" } }],
     outputs: [],
     conditions: [],
+    checkpoint: { kind: "text_present", text: "Go" },
     createdAt: "2026-09-16T00:00:00.000Z",
   };
 
@@ -442,6 +444,7 @@ test("target remains missing returns recoverable", async () => {
     steps: [{ action: "click", target: { text: "Never" } }],
     outputs: [],
     conditions: [],
+    checkpoint: { kind: "text_present", text: "Ready" },
     createdAt: "2026-09-16T00:00:00.000Z",
   };
 
@@ -489,6 +492,7 @@ test("target ambiguous fails immediately without polling", async () => {
     steps: [{ action: "click", target: { text: "Go" } }],
     outputs: [],
     conditions: [],
+    checkpoint: { kind: "text_present", text: "Go" },
     createdAt: "2026-09-16T00:00:00.000Z",
   };
 
@@ -555,6 +559,7 @@ test("delayed checkpoint eventually passes", async () => {
     ],
     outputs: [],
     conditions: [],
+    checkpoint: { kind: "text_present", text: "Ready" },
     createdAt: "2026-09-16T00:00:00.000Z",
   };
 
@@ -601,6 +606,7 @@ test("checkpoint timeout returns checkpoint_failed", async () => {
     ],
     outputs: [],
     conditions: [],
+    checkpoint: { kind: "text_present", text: "Ready" },
     createdAt: "2026-09-16T00:00:00.000Z",
   };
 
@@ -632,6 +638,7 @@ test("replay blocks disallowed startUrl before navigate", async () => {
     steps: [],
     outputs: [],
     conditions: [],
+    checkpoint: { kind: "text_present", text: "ok" },
     createdAt: "2026-09-16T00:00:00.000Z",
   };
 
@@ -677,6 +684,7 @@ test("replay cannot bypass risky element policy", async () => {
     steps: [{ action: "click", target: { text: "Confirm transfer" } }],
     outputs: [],
     conditions: [],
+    checkpoint: { kind: "text_present", text: "ok" },
     createdAt: "2026-09-16T00:00:00.000Z",
   };
 
@@ -685,4 +693,175 @@ test("replay cannot bypass risky element policy", async () => {
   if (result.status !== "failure") return;
   assert.equal(result.code, "policy_requires_human");
   assert.equal(clicked, false);
+});
+
+test("artifact checkpoint missing yields checkpoint_failed despite member outputs", async () => {
+  const detail = `
+- button "Order cheque book" [ref=order]
+- term: Member ID
+- definition: 002010
+- term: Email
+- definition: p@example.com
+- term: Phone
+- definition: 555
+- term: Address
+- definition: Street
+`;
+  const browser = baseBrowser({
+    observe: async () => ({
+      snapshot: detail,
+      elements: [],
+      url: "https://dough-credit-union.vercel.app/members/002010",
+    }),
+    click: async () => ({ ok: true }),
+    inspectElement: async () =>
+      inspection({
+        role: "button",
+        name: "Order cheque book",
+        text: "Order cheque book",
+        rect: { x: 0, y: 0, width: 20, height: 10 },
+      }),
+  });
+
+  const artifact: WorkflowArtifact = {
+    id: "cheque-no-ack",
+    version: 1,
+    kind: "browser_workflow",
+    name: "cheque_no_ack",
+    description: "d",
+    sourceRunId: "r",
+    startUrl: "https://dough-credit-union.vercel.app/",
+    requiresAuthenticatedSession: false,
+    inputs: {},
+    steps: [{ action: "click", target: { text: "Order cheque book" } }],
+    outputs: [
+      {
+        name: "member_id",
+        type: "string",
+        extractor: { kind: "definition", label: "Member ID" },
+      },
+    ],
+    conditions: [],
+    checkpoint: { kind: "text_present", text: "Cheque book ordered" },
+    createdAt: "2026-09-16T00:00:00.000Z",
+  };
+
+  const result = await replayArtifact(artifact, {}, browser, FAST_POLL);
+  assert.equal(result.status, "failure");
+  if (result.status !== "failure") return;
+  assert.equal(result.code, "checkpoint_failed");
+});
+
+test("delayed artifact checkpoint eventually succeeds", async () => {
+  let observes = 0;
+  const browser = baseBrowser({
+    observe: async () => {
+      observes += 1;
+      if (observes < 4) {
+        return {
+          snapshot: `
+- button "Order cheque book" [ref=order]
+- term: Member ID
+- definition: 002010
+`,
+          elements: [],
+          url: "https://dough-credit-union.vercel.app/cheques",
+        };
+      }
+      return {
+        snapshot: `
+- alert: "Cheque book ordered"
+- term: Member ID
+- definition: 002010
+`,
+        elements: [],
+        url: "https://dough-credit-union.vercel.app/members/002010?flash=Cheque%20book%20ordered",
+      };
+    },
+    click: async () => ({ ok: true }),
+    inspectElement: async () =>
+      inspection({
+        role: "button",
+        name: "Order cheque book",
+        text: "Order cheque book",
+        rect: { x: 0, y: 0, width: 20, height: 10 },
+      }),
+  });
+
+  const artifact: WorkflowArtifact = {
+    id: "cheque-ack-delay",
+    version: 1,
+    kind: "browser_workflow",
+    name: "cheque_ack_delay",
+    description: "d",
+    sourceRunId: "r",
+    startUrl: "https://dough-credit-union.vercel.app/",
+    requiresAuthenticatedSession: false,
+    inputs: {},
+    steps: [{ action: "click", target: { text: "Order cheque book" } }],
+    outputs: [
+      {
+        name: "member_id",
+        type: "string",
+        extractor: { kind: "definition", label: "Member ID" },
+      },
+    ],
+    conditions: [],
+    checkpoint: { kind: "text_present", text: "Cheque book ordered" },
+    createdAt: "2026-09-16T00:00:00.000Z",
+  };
+
+  const result = await replayArtifact(artifact, {}, browser, {
+    pollIntervalMs: 10,
+    pollTimeoutMs: 500,
+  });
+  assert.equal(result.status, "success");
+  if (result.status !== "success") return;
+  assert.equal(result.outputs.member_id, "002010");
+});
+
+test("condition during final checkpoint wait wins", async () => {
+  const browser = baseBrowser({
+    observe: async () => ({
+      snapshot: `- text: "No members found"`,
+      elements: [],
+      url: "https://dough-credit-union.vercel.app/search",
+    }),
+    click: async () => ({ ok: true }),
+    inspectElement: async () =>
+      inspection({
+        role: "button",
+        name: "Search",
+        rect: { x: 0, y: 0, width: 10, height: 10 },
+      }),
+  });
+
+  const artifact: WorkflowArtifact = {
+    id: "cond-during-cp",
+    version: 1,
+    kind: "browser_workflow",
+    name: "cond_during_cp",
+    description: "d",
+    sourceRunId: "r",
+    startUrl: "https://dough-credit-union.vercel.app/",
+    requiresAuthenticatedSession: false,
+    inputs: {},
+    steps: [{ action: "click", target: { text: "Search" } }],
+    outputs: [],
+    conditions: [
+      {
+        class: "business_outcome",
+        code: "member_not_found",
+        message: "No members found",
+        when: { kind: "text_present", text: "No members found" },
+      },
+    ],
+    checkpoint: { kind: "text_present", text: "Cheque book ordered" },
+    createdAt: "2026-09-16T00:00:00.000Z",
+  };
+
+  const result = await replayArtifact(artifact, {}, browser, FAST_POLL);
+  assert.equal(result.status, "business_outcome");
+  if (result.status !== "business_outcome") return;
+  assert.equal(result.code, "member_not_found");
 });

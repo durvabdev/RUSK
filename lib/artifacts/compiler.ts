@@ -331,6 +331,138 @@ function toolText(args: unknown): string | null {
   return null;
 }
 
+const ACK_HINT =
+  /\b(ordered|debited|success|successful|confirmed|complete|completed|acknowledg|submitted|saved|created|updated)\b/i;
+
+/** Strip amounts / account-like tokens so checkpoints are not member-specific. */
+export function stabilizeAckText(raw: string): string {
+  const cleaned = raw
+    .replace(/\$[\d,.]+/g, "")
+    .replace(/\b[A-Z]{2}-\d+(?:-\d+)*\b/g, "")
+    .replace(/\bTX-[A-Z0-9-]+\b/gi, "")
+    .replace(/\b\d{4,}\b/g, "")
+    .replace(/\s+/g, " ")
+    .replace(/\s*[.,;:]\s*$/g, "")
+    .trim();
+  const first = cleaned.split(/[.!?]/)[0]?.trim() ?? cleaned;
+  return first.replace(/\s+/g, " ").trim();
+}
+
+function flashFromUrl(url: string | undefined): string | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    for (const key of ["flash", "message", "status", "notice", "toast"]) {
+      const v = u.searchParams.get(key);
+      if (v && v.trim()) return v.trim();
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+function lineLooksLikeDefinition(line: string): boolean {
+  return /^\s*[\-]*\s*(term|definition)(?:\s|\[|:)/i.test(line);
+}
+
+function extractAlertishFromSnapshot(snapshot: string): string | null {
+  for (const line of snapshot.split("\n")) {
+    const t = line.trim();
+    if (!t || lineLooksLikeDefinition(t)) continue;
+    if (
+      /\b(alert|status|banner|flash|toast|notice)\b/i.test(t) ||
+      /role[=:]?\s*["']?(alert|status)/i.test(t)
+    ) {
+      const quoted = t.match(/"([^"]{3,})"/);
+      if (quoted?.[1] && ACK_HINT.test(quoted[1])) {
+        return quoted[1];
+      }
+      const afterColon = t.split(":").slice(1).join(":").trim();
+      if (afterColon && ACK_HINT.test(afterColon)) return afterColon;
+    }
+  }
+  for (const line of snapshot.split("\n")) {
+    const t = line.trim();
+    if (!t || lineLooksLikeDefinition(t)) continue;
+    const quoted = t.match(/"([^"]{3,})"/);
+    const candidate = quoted?.[1] ?? t.replace(/^[\-\*•]\s*/, "");
+    if (ACK_HINT.test(candidate) && candidate.length < 200) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+/** Stable detail-page labels (look-up success) — not instance values. */
+function extractDetailLabelFromSnapshot(snapshot: string): string | null {
+  const labels: string[] = [];
+  for (const line of snapshot.split("\n")) {
+    const termMatch = line.match(
+      /^\s*[\-]*\s*term(?:\s+\[ref=[^\]]+\])?\s*:\s*(.+)$/i,
+    );
+    if (!termMatch) continue;
+    const label = termMatch[1]!.trim();
+    if (label) labels.push(label);
+  }
+  if (labels.length === 0) return null;
+  const preferred = labels.find((l) => /^member\s*id$/i.test(l));
+  return preferred ?? labels[0]!;
+}
+
+export function deriveCheckpoint(
+  snapshot: string,
+  url?: string,
+): { kind: "text_present"; text: string } {
+  // Same class of evidence the actor must cite to finish: visible page proof.
+  // Prefer transactional ack (flash/alert); else detail-page labels for look-ups.
+  const fromFlash = flashFromUrl(url);
+  const raw =
+    fromFlash ??
+    extractAlertishFromSnapshot(snapshot) ??
+    extractDetailLabelFromSnapshot(snapshot);
+  if (!raw) {
+    throw new ArtifactCompileError(
+      "Cannot derive success checkpoint from final observation",
+    );
+  }
+  const text = fromFlash || ACK_HINT.test(raw)
+    ? stabilizeAckText(raw)
+    : raw.trim();
+  if (!text || text.length < 3) {
+    throw new ArtifactCompileError(
+      "Cannot derive a stable success checkpoint text",
+    );
+  }
+  return { kind: "text_present", text };
+}
+
+function pendingAlreadyInSteps(
+  steps: ReplayStep[],
+  recorded: RecordedTarget,
+): boolean {
+  const signal =
+    recorded.testId ||
+    recorded.name ||
+    recorded.text ||
+    recorded.role;
+  if (!signal) return false;
+  for (const step of steps) {
+    if (step.action !== "click" && step.action !== "type" && step.action !== "select") {
+      continue;
+    }
+    const t = step.target;
+    if (recorded.testId && t.testId === recorded.testId) return true;
+    if (recorded.name && (t.name === recorded.name || t.text === recorded.name)) {
+      return true;
+    }
+    if (recorded.text && (t.text === recorded.text || t.name === recorded.text)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function compileArtifact(
   state: AgentState,
   options: CompileArtifactOptions = {},
@@ -488,10 +620,62 @@ export function compileArtifact(
     throw new ArtifactCompileError("No replayable steps in run history");
   }
 
+  // HITL: policy-blocked commit may never have executed — still emit as final step.
+  const pending = state.pendingCommit;
+  if (pending && ["click", "type", "select"].includes(pending.toolCall.name)) {
+    const recorded = pending.recordedTarget;
+    if (!pendingAlreadyInSteps(steps, recorded)) {
+      const name = pending.toolCall.name;
+      if (name === "click") {
+        steps.push({
+          action: "click",
+          target: generalizeTarget(recorded, ctx, { isClick: true }),
+        });
+      } else if (name === "type") {
+        if (isPasswordField(recordedToAuthMeta(recorded))) {
+          throw new ArtifactCompileError(
+            "Credential typing steps cannot be compiled into artifacts",
+          );
+        }
+        const literal = toolText(pending.toolCall.arguments);
+        if (!literal) {
+          throw new ArtifactCompileError("Pending type step missing text");
+        }
+        const fieldHint =
+          recorded.name ?? recorded.placeholder ?? undefined;
+        const inputName = nextInputName(literal, fieldHint);
+        registerInput(inputName, fieldHint);
+        registerParameterizedInput(ctx, inputName, literal);
+        steps.push({
+          action: "type",
+          target: generalizeInputTarget(recorded),
+          value: { source: "input", name: inputName },
+        });
+      } else if (name === "select") {
+        const literal = toolText(pending.toolCall.arguments);
+        if (!literal) {
+          throw new ArtifactCompileError("Pending select step missing value");
+        }
+        const inputName = nextInputName(literal, recorded.name);
+        registerInput(inputName);
+        registerParameterizedInput(ctx, inputName, literal);
+        steps.push({
+          action: "select",
+          target: generalizeInputTarget(recorded),
+          value: { source: "input", name: inputName },
+        });
+      }
+    }
+  }
+
   const { name: inferredName, description: inferredDesc } =
     generalizeArtifactName(state.goal, ctx.literals, ctx);
 
   const outputs = deriveOutputs(state.observation?.snapshot ?? "");
+  const checkpoint = deriveCheckpoint(
+    state.observation?.snapshot ?? "",
+    state.observation?.url,
+  );
 
   return {
     id: crypto.randomUUID(),
@@ -506,6 +690,7 @@ export function compileArtifact(
     steps,
     outputs,
     conditions: [],
+    checkpoint,
     createdAt: new Date().toISOString(),
   };
 }

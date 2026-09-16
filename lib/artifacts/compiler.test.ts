@@ -64,9 +64,13 @@ function memberLookupState(): AgentState {
       }),
     ],
     observation: {
-      url: "https://example.com/members/002010",
+      url: "https://example.com/members/002010?flash=Member%20lookup%20completed",
       title: "Member",
-      snapshot: "",
+      snapshot: `
+- alert: Member lookup completed
+- term: Member ID
+- definition: redacted
+`,
       elements: [],
     },
   } as unknown as AgentState;
@@ -91,4 +95,88 @@ test("serialized artifact drops dynamic member URL and id", () => {
     name: "member_query",
   });
   assert.equal("recorded" in view.target, false);
+  assert.equal(artifact.checkpoint.kind, "text_present");
+  assert.equal(artifact.checkpoint.text, "Member lookup completed");
+});
+
+test("deriveCheckpoint from flash strips account amounts", async () => {
+  const { deriveCheckpoint, stabilizeAckText } = await import("./compiler.ts");
+  assert.equal(
+    stabilizeAckText(
+      "Cheque book ordered. Debited $15.00 from CK-2010. TX-CK-2010-0261",
+    ),
+    "Cheque book ordered",
+  );
+  const cp = deriveCheckpoint(
+    "",
+    "https://dough-credit-union.vercel.app/members/x?flash=Cheque%20book%20ordered.%20Debited%20%2415.00%20from%20CK-2010.%20TX-CK-2010-0261",
+  );
+  assert.equal(cp.text, "Cheque book ordered");
+});
+
+test("pendingCommit HITL click is compiled as final step", () => {
+  const state = memberLookupState();
+  state.pendingCommit = {
+    toolCall: {
+      name: "click",
+      arguments: { ref: "order" },
+    },
+    recordedTarget: {
+      ref: "order",
+      role: "button",
+      name: "Order cheque book",
+      text: "Order cheque book",
+    },
+  };
+  state.observation = {
+    url: "https://example.com/m?flash=Cheque%20book%20ordered.%20Debited%20%2415.00%20from%20CK-2010",
+    title: "Done",
+    snapshot: `- alert: "Cheque book ordered"`,
+    elements: [],
+  };
+
+  const artifact = compileArtifact(state, {
+    inputNameByText: { "002010": "member_query" },
+  });
+
+  const last = artifact.steps[artifact.steps.length - 1];
+  assert.ok(last && last.action === "click");
+  assert.equal(
+    last.action === "click" && (last.target.name === "Order cheque book" || last.target.text === "Order cheque book"),
+    true,
+  );
+  assert.equal(artifact.checkpoint.text, "Cheque book ordered");
+});
+
+test("look-up detail page uses Member ID as checkpoint", () => {
+  const state = memberLookupState();
+  state.observation = {
+    url: "https://example.com/members/1",
+    title: "Member",
+    snapshot: `
+- term: Member ID
+- definition: 002010
+- term: Email
+- definition: a@b.com
+`,
+    elements: [],
+  };
+  const artifact = compileArtifact(state, {
+    inputNameByText: { "002010": "member_query" },
+  });
+  assert.equal(artifact.checkpoint.text, "Member ID");
+});
+
+test("compile fails without terminal acknowledgement", () => {
+  const state = memberLookupState();
+  state.observation = {
+    url: "https://example.com/members/1",
+    title: "Member",
+    snapshot: `- heading "Home"\n- link "Member"`,
+    elements: [],
+  };
+  assert.throws(
+    () => compileArtifact(state, { inputNameByText: { "002010": "member_query" } }),
+    /checkpoint/i,
+  );
 });

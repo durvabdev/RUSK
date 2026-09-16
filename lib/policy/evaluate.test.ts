@@ -31,6 +31,32 @@ test("disallowed origin blocked including startUrl not on list", () => {
   if (!d.ok) assert.equal(d.code, "origin_blocked");
 });
 
+test("relative navigate resolves against currentUrl allowlist", () => {
+  const d = evaluateActionPolicy(
+    {
+      action: "navigate",
+      navigateUrl: "/members/new",
+      currentUrl: `${DOUGH}/members`,
+    },
+    cfg(),
+  );
+  assert.equal(d.ok, true);
+  if (d.ok) assert.equal(d.risk, "safe");
+});
+
+test("relative navigate still blocked without allowlisted base", () => {
+  const d = evaluateActionPolicy(
+    {
+      action: "navigate",
+      navigateUrl: "/members/new",
+      currentUrl: "https://evil.example/members",
+    },
+    cfg(),
+  );
+  assert.equal(d.ok, false);
+  if (!d.ok) assert.equal(d.code, "origin_blocked");
+});
+
 test("disallowed action blocked", () => {
   const d = evaluateActionPolicy(
     { action: "hover", currentUrl: `${DOUGH}/` },
@@ -38,6 +64,18 @@ test("disallowed action blocked", () => {
   );
   assert.equal(d.ok, false);
   if (!d.ok) assert.equal(d.code, "action_blocked");
+});
+
+test("inspect_element allowed as safe read on allowlisted origin", () => {
+  const d = evaluateActionPolicy(
+    {
+      action: "inspect_element",
+      currentUrl: `${DOUGH}/members`,
+    },
+    cfg(),
+  );
+  assert.equal(d.ok, true);
+  if (d.ok) assert.equal(d.risk, "safe");
 });
 
 test("element.risk risky requires human", () => {
@@ -88,6 +126,49 @@ test("keyword fallback only when data-risk absent", () => {
     }),
     "reversible_mutation",
   );
+});
+
+test("financial_transaction metadata is risky", () => {
+  assert.equal(
+    classifyRisk("click", {
+      actionCategory: "financial_transaction",
+      name: "Submit",
+    }),
+    "risky",
+  );
+  const d = evaluateActionPolicy(
+    {
+      action: "click",
+      currentUrl: `${DOUGH}/cheques`,
+      element: { actionCategory: "financial_transaction" },
+    },
+    cfg(),
+  );
+  assert.equal(d.ok, false);
+  if (!d.ok) assert.equal(d.code, "policy_requires_human");
+});
+
+test("data-risk wins over financial_transaction", () => {
+  assert.equal(
+    classifyRisk("click", {
+      risk: "safe",
+      actionCategory: "financial_transaction",
+    }),
+    "safe",
+  );
+});
+
+test("Enter press_key requires human", () => {
+  const d = evaluateActionPolicy(
+    { action: "press_key", currentUrl: `${DOUGH}/`, key: "Enter" },
+    cfg(),
+  );
+  assert.equal(d.ok, false);
+  if (!d.ok) {
+    assert.equal(d.code, "policy_requires_human");
+    assert.equal(d.risk, "risky");
+  }
+  assert.equal(classifyRisk("press_key", null, null, "Tab"), "safe");
 });
 
 test("getPolicyConfig has no baseOrigin parameter", () => {
