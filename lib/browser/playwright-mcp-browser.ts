@@ -87,6 +87,22 @@ export const INSPECT_ELEMENT_FN = String.raw`(element) => {
     ),
     readOnly: Boolean(element.readOnly),
     value: trim(typeof element.value === "string" ? element.value : null),
+    checked: (() => {
+      const tag = element.tagName ? element.tagName.toLowerCase() : "";
+      const role = element.getAttribute("role");
+      const type = (element.getAttribute("type") || element.type || "").toLowerCase();
+      if (
+        type === "checkbox" ||
+        type === "radio" ||
+        role === "checkbox" ||
+        role === "radio" ||
+        role === "switch"
+      ) {
+        if (typeof element.checked === "boolean") return element.checked;
+        return element.getAttribute("aria-checked") === "true";
+      }
+      return null;
+    })(),
     rect: {
       x: Math.round(rect.x),
       y: Math.round(rect.y),
@@ -94,6 +110,227 @@ export const INSPECT_ELEMENT_FN = String.raw`(element) => {
       height: Math.round(rect.height),
     },
   };
+}`;
+
+/** Fixed — capture configurable form fields near a commit control. */
+export const CAPTURE_FORM_FIELDS_FN = String.raw`(element) => {
+  const max = ${DOM_TEXT_MAX_LEN};
+  const trim = (value) => {
+    if (value == null) return null;
+    const normalized = String(value).replace(/\s+/g, " ").trim();
+    if (!normalized) return null;
+    return normalized.length <= max
+      ? normalized
+      : normalized.slice(0, max - 1) + "…";
+  };
+
+  const EXCLUDED_TYPES = new Set([
+    "hidden", "password", "submit", "button", "image", "reset", "file",
+  ]);
+  const TOKEN_NAME =
+    /(^|[_-])(csrf|token|authenticity_token|nonce|session)([_-]|$)/i;
+
+  function isVisible(el) {
+    const html = el;
+    const style = window.getComputedStyle(html);
+    if (
+      style.display === "none" ||
+      style.visibility === "hidden" ||
+      style.opacity === "0"
+    ) {
+      return false;
+    }
+    const rect = html.getBoundingClientRect();
+    return rect.width >= 1 && rect.height >= 1;
+  }
+
+  function labelFor(el) {
+    if (el.id) {
+      const lab = document.querySelector('label[for="' + CSS.escape(el.id) + '"]');
+      if (lab) return trim(lab.textContent);
+    }
+    const wrap = el.closest("label");
+    if (wrap) return trim(wrap.textContent);
+    const aria = trim(el.getAttribute("aria-label"));
+    if (aria) return aria;
+    const labelledBy = el.getAttribute("aria-labelledby");
+    if (labelledBy) {
+      const parts = labelledBy.split(/\\s+/).map((id) => {
+        const node = document.getElementById(id);
+        return node ? trim(node.textContent) : null;
+      }).filter(Boolean);
+      if (parts.length) return parts.join(" ");
+    }
+    return null;
+  }
+
+  function accessibleName(el) {
+    return (
+      labelFor(el) ||
+      trim(el.getAttribute("aria-label")) ||
+      trim(el.getAttribute("name") || el.name) ||
+      trim(el.getAttribute("placeholder") || el.placeholder) ||
+      null
+    );
+  }
+
+  function countEditable(root) {
+    if (!root || !root.querySelectorAll) return 0;
+    let n = 0;
+    for (const el of root.querySelectorAll(
+      "input, textarea, select, [contenteditable='true'], [role='checkbox'], [role='radio'], [role='switch']",
+    )) {
+      const tag = el.tagName.toLowerCase();
+      const type = (el.getAttribute("type") || el.type || "").toLowerCase();
+      if (tag === "input" && EXCLUDED_TYPES.has(type)) continue;
+      if (el.disabled || el.getAttribute("aria-disabled") === "true") continue;
+      n += 1;
+    }
+    return n;
+  }
+
+  function resolveScope(commitEl) {
+    if (commitEl.form) return commitEl.form;
+    const form = commitEl.closest("form");
+    if (form) return form;
+    const candidates = [
+      commitEl.closest("[role='dialog']"),
+      commitEl.closest("section"),
+      commitEl.closest("main"),
+      commitEl.closest("article"),
+      commitEl.parentElement,
+    ];
+    for (const c of candidates) {
+      if (c && countEditable(c) > 0) return c;
+    }
+    return null;
+  }
+
+  const scope = resolveScope(element);
+  if (!scope) return { fields: [] };
+
+  const fields = [];
+  const seen = new Set();
+
+  const nodes = scope.querySelectorAll(
+    "input, textarea, select, [contenteditable='true'], [role='checkbox'], [role='radio'], [role='switch']",
+  );
+
+  for (const el of nodes) {
+    if (seen.has(el)) continue;
+    seen.add(el);
+
+    const tag = el.tagName.toLowerCase();
+    const role = el.getAttribute("role");
+    const type = (el.getAttribute("type") || el.type || "").toLowerCase();
+    const htmlName = trim(el.getAttribute("name") || el.name);
+
+    if (tag === "input" && EXCLUDED_TYPES.has(type)) continue;
+    if (el.disabled || el.getAttribute("aria-disabled") === "true") continue;
+    if (el.readOnly && el.getAttribute("contenteditable") !== "true") continue;
+    if (!isVisible(el)) continue;
+    if (htmlName && TOKEN_NAME.test(htmlName)) continue;
+
+    let controlType = null;
+    let value = null;
+    let options = undefined;
+
+    if (tag === "select" || role === "combobox" || role === "listbox") {
+      controlType = "select";
+      if (tag === "select") {
+        const selected = el.options && el.selectedIndex >= 0
+          ? el.options[el.selectedIndex]
+          : null;
+        value =
+          trim(selected && (selected.label || selected.text || selected.value)) ||
+          trim(el.value) ||
+          "";
+        options = Array.from(el.options || [])
+          .filter((o) => !o.disabled)
+          .map((o) => trim(o.label || o.text || o.value))
+          .filter(Boolean);
+      } else {
+        value = trim(el.getAttribute("aria-valuetext") || el.textContent) || "";
+      }
+      if (!value) continue;
+    } else if (
+      type === "checkbox" ||
+      role === "checkbox" ||
+      role === "switch"
+    ) {
+      controlType = "checkbox";
+      value =
+        typeof el.checked === "boolean"
+          ? el.checked
+          : el.getAttribute("aria-checked") === "true";
+    } else if (type === "radio" || role === "radio") {
+      controlType = "radio";
+      const checked =
+        typeof el.checked === "boolean"
+          ? el.checked
+          : el.getAttribute("aria-checked") === "true";
+      if (!checked) continue;
+      value =
+        trim(el.getAttribute("value") || el.value) ||
+        accessibleName(el) ||
+        "true";
+    } else if (tag === "textarea") {
+      controlType = "textarea";
+      value = trim(el.value) || "";
+      if (!value) continue;
+    } else if (
+      tag === "input" ||
+      el.getAttribute("contenteditable") === "true" ||
+      role === "textbox" ||
+      role === "searchbox"
+    ) {
+      controlType = "text";
+      value =
+        trim(
+          typeof el.value === "string"
+            ? el.value
+            : el.getAttribute("contenteditable") === "true"
+              ? el.textContent
+              : null,
+        ) || "";
+      if (!value) continue;
+    } else {
+      continue;
+    }
+
+    const label = accessibleName(el);
+    const placeholder = trim(el.getAttribute("placeholder") || el.placeholder);
+    const testId = trim(el.getAttribute("data-testid"));
+    const a11yRole =
+      role ||
+      (controlType === "select"
+        ? "combobox"
+        : controlType === "checkbox"
+          ? "checkbox"
+          : controlType === "radio"
+            ? "radio"
+            : controlType === "textarea"
+              ? "textbox"
+              : "textbox");
+
+    const target = {};
+    if (testId) target.testId = testId;
+    if (a11yRole) target.role = a11yRole;
+    if (label) target.name = label;
+    else if (htmlName) target.name = htmlName;
+    if (placeholder) target.placeholder = placeholder;
+
+    fields.push({
+      target,
+      controlType,
+      value,
+      label: label,
+      name: htmlName,
+      ...(options ? { options } : {}),
+    });
+  }
+
+  return { fields };
 }`;
 
 /** Fixed — list <option> value/label for select debugging/matching. */
@@ -501,6 +738,27 @@ export function parseInspectPayload(text: string): ElementInspection {
   }
 }
 
+export function parseCaptureFormFieldsPayload(
+  text: string,
+): import("../artifacts/schema").RecordedFormField[] {
+  const json = extractJsonObject(text);
+  if (!json) {
+    throw new PlaywrightToolError(
+      `captureFormFields did not return JSON: ${text.slice(0, 200)}`,
+    );
+  }
+  try {
+    const parsed = JSON.parse(json) as {
+      fields?: import("../artifacts/schema").RecordedFormField[];
+    };
+    return Array.isArray(parsed.fields) ? parsed.fields : [];
+  } catch {
+    throw new PlaywrightToolError(
+      `captureFormFields returned invalid JSON: ${text.slice(0, 200)}`,
+    );
+  }
+}
+
 export function getBrowser(): BrowserController {
   return {
     async observe(): Promise<BrowserObservation> {
@@ -634,6 +892,22 @@ export function getBrowser(): BrowserController {
           }),
         );
         return parseInspectPayload(text);
+      });
+    },
+
+    async captureFormFields(commitRef: string) {
+      return withClient(async (client) => {
+        const text = toolText(
+          await client.callTool({
+            name: "browser_evaluate",
+            arguments: {
+              target: commitRef,
+              element: `snapshot ref ${commitRef}`,
+              function: CAPTURE_FORM_FIELDS_FN,
+            },
+          }),
+        );
+        return parseCaptureFormFieldsPayload(text);
       });
     },
 

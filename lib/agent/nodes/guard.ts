@@ -1,4 +1,7 @@
-import type { BrowserController } from "../../browser/browser";
+import type {
+  BrowserController,
+  ElementInspection,
+} from "../../browser/browser";
 import {
   evaluateActionPolicy,
   type PolicyElementMeta,
@@ -10,6 +13,8 @@ import {
   fromElementInspection,
   isCredentialField,
 } from "../auth-form";
+import type { RecordedFormField } from "../../artifacts/schema";
+import { shouldCaptureFormFields } from "../../artifacts/form-capture";
 import type { AgentState, AgentStateUpdate } from "../state";
 
 function toolRef(arguments_: unknown): string | null {
@@ -123,36 +128,31 @@ export function createGuardNode(browser: BrowserController) {
     }
 
     // --- Shared action policy (before any execute) ---
-    let recordedFromInspect: {
-      role: string | null;
-      name: string | null;
-      text: string | null;
-      href: string | null;
-      type: string | null;
-      testId: string | null;
-      placeholder: string | null;
-      risk: string | null;
-      actionCategory: string | null;
-    } | null = null;
+    let inspectedElement: ElementInspection | null = null;
 
     if (ref && ["click", "type", "select"].includes(call.name)) {
       try {
-        const inspected = await browser.inspectElement(ref);
-        recordedFromInspect = {
-          role: inspected.role,
-          name: inspected.name,
-          text: inspected.text,
-          href: inspected.href,
-          type: inspected.type,
-          testId: inspected.testId,
-          placeholder: inspected.placeholder,
-          risk: inspected.risk,
-          actionCategory: inspected.actionCategory,
-        };
+        inspectedElement = await browser.inspectElement(ref);
       } catch {
-        recordedFromInspect = null;
+        inspectedElement = null;
       }
     }
+
+    const recordedFromInspect = inspectedElement
+      ? {
+          role: inspectedElement.role,
+          name: inspectedElement.name,
+          text: inspectedElement.text,
+          href: inspectedElement.href,
+          type: inspectedElement.type,
+          testId: inspectedElement.testId,
+          placeholder: inspectedElement.placeholder,
+          risk: inspectedElement.risk,
+          actionCategory: inspectedElement.actionCategory,
+          tag: inspectedElement.tag,
+          ariaLabel: inspectedElement.ariaLabel,
+        }
+      : null;
 
     const element: PolicyElementMeta | null = recordedFromInspect
       ? {
@@ -183,6 +183,19 @@ export function createGuardNode(browser: BrowserController) {
     }
 
     if (policy.code === "policy_requires_human") {
+      let recordedFormFields: RecordedFormField[] | undefined;
+      if (
+        ref &&
+        shouldCaptureFormFields(call.name, inspectedElement)
+      ) {
+        try {
+          const fields = await browser.captureFormFields(ref);
+          if (fields.length > 0) recordedFormFields = fields;
+        } catch {
+          /* non-fatal */
+        }
+      }
+
       const pendingCommit =
         recordedFromInspect &&
         ["click", "type", "select"].includes(call.name)
@@ -209,6 +222,7 @@ export function createGuardNode(browser: BrowserController) {
                   ? { placeholder: recordedFromInspect.placeholder }
                   : {}),
               },
+              ...(recordedFormFields ? { recordedFormFields } : {}),
             }
           : null;
 

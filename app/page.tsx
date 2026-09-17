@@ -17,9 +17,10 @@ type Run = {
 };
 
 type ArtifactInputDef = {
-  type: "string";
+  type: "string" | "boolean";
   required: boolean;
   description?: string;
+  default?: string | boolean;
 };
 
 type ArtifactSummary = {
@@ -66,7 +67,10 @@ function originOf(url: string): string | null {
 }
 
 function humanizeKey(key: string): string {
-  const words = key.split("_").filter(Boolean);
+  const words = key
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .split(/[_\s]+/)
+    .filter(Boolean);
   if (words.length === 0) return key;
   return words
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
@@ -145,6 +149,28 @@ export default function Home() {
       return;
     }
     setExpandedId(artifact.id);
+    // #region agent log
+    fetch("http://127.0.0.1:7664/ingest/fd9e0927-3b2b-4655-99d8-b10f5823d4d8", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Debug-Session-Id": "78d987",
+      },
+      body: JSON.stringify({
+        sessionId: "78d987",
+        runId: "ui-expand",
+        hypothesisId: "B",
+        location: "app/page.tsx:toggleArtifact",
+        message: "expanded workflow inputs",
+        data: {
+          artifactId: artifact.id,
+          inputCount: Object.keys(artifact.inputs ?? {}).length,
+          inputKeys: Object.keys(artifact.inputs ?? {}),
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
     setInputValues((prev) => {
       const next = { ...prev };
       for (const key of Object.keys(artifact.inputs)) {
@@ -156,21 +182,36 @@ export default function Home() {
 
   async function onRunWorkflow(artifact: ArtifactSummary) {
     const inputs: Record<string, string> = {};
-    for (const [key, def] of Object.entries(artifact.inputs)) {
-      const value = (inputValues[key] ?? "").trim();
-      if (def.required && !value) {
-        setReplayResults((prev) => ({
-          ...prev,
-          [artifact.id]: {
-            status: "failure",
-            message: `Missing required input: ${key}`,
-            code: "input_invalid",
-          },
-        }));
-        return;
-      }
-      inputs[key] = value;
+    for (const [key] of Object.entries(artifact.inputs)) {
+      inputs[key] = (inputValues[key] ?? "").trim();
     }
+
+    // #region agent log
+    fetch("http://127.0.0.1:7664/ingest/fd9e0927-3b2b-4655-99d8-b10f5823d4d8", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Debug-Session-Id": "78d987",
+      },
+      body: JSON.stringify({
+        sessionId: "78d987",
+        runId: "wf-pre",
+        hypothesisId: "A",
+        location: "app/page.tsx:onRunWorkflow:request",
+        message: "sending workflow run request",
+        data: {
+          artifactId: artifact.id,
+          inputKeys: Object.keys(inputs),
+          filledKeys: Object.entries(inputs)
+            .filter(([, v]) => v.trim())
+            .map(([k]) => k),
+          requiredCount: Object.values(artifact.inputs).filter((d) => d.required)
+            .length,
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
 
     setReplayRunningId(artifact.id);
     try {
@@ -192,6 +233,35 @@ export default function Home() {
         context?: unknown;
       };
       const runId = typeof data.runId === "string" ? data.runId : undefined;
+      // #region agent log
+      fetch("http://127.0.0.1:7664/ingest/fd9e0927-3b2b-4655-99d8-b10f5823d4d8", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Debug-Session-Id": "78d987",
+        },
+        body: JSON.stringify({
+          sessionId: "78d987",
+          runId: runId ?? "wf-resp",
+          hypothesisId: "B",
+          location: "app/page.tsx:onRunWorkflow:response",
+          message: "workflow run API response",
+          data: {
+            httpStatus: res.status,
+            status: data.status ?? null,
+            code: data.code ?? null,
+            message:
+              typeof data.message === "string"
+                ? data.message.slice(0, 200)
+                : null,
+            error:
+              typeof data.error === "string" ? data.error.slice(0, 200) : null,
+            hasOutputs: Boolean(data.outputs),
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       if (data.status === "success" && data.outputs) {
         setReplayResults((prev) => ({
           ...prev,
@@ -414,14 +484,16 @@ export default function Home() {
                       {Object.entries(artifact.inputs).map(([key, def]) => (
                         <div key={key}>
                           <label htmlFor={`input-${artifact.id}-${key}`}>
-                            {humanizeKey(key)}
-                            {def.required ? "" : " (optional)"}
+                            {def.description?.trim() || humanizeKey(key)}
+                            {" (optional)"}
                           </label>
                           <input
                             id={`input-${artifact.id}-${key}`}
                             type="text"
                             value={inputValues[key] ?? ""}
-                            placeholder={def.description || undefined}
+                            placeholder={
+                              def.required ? undefined : "leave empty to keep page value"
+                            }
                             onChange={(e) =>
                               setInputValues((prev) => ({
                                 ...prev,
@@ -441,16 +513,11 @@ export default function Home() {
 
                       {replay ? (
                         <div className="replay-result">
-                          {replay.runId ? (
-                            <>
-                              <p className="label">Replay runId</p>
-                              <p className="value">{replay.runId}</p>
-                            </>
+                          <p className="label">Status</p>
+                          <p className="value">{replay.status}</p>
+                          {"message" in replay && replay.message ? (
+                            <p className="value muted">{replay.message}</p>
                           ) : null}
-                          <p className="label">Result</p>
-                          <pre className="value" style={{ whiteSpace: "pre-wrap" }}>
-                            {JSON.stringify(replay, null, 2)}
-                          </pre>
                         </div>
                       ) : null}
                     </div>
@@ -520,12 +587,6 @@ export default function Home() {
             <>
               <p className="label">Code</p>
               <p className="value">{run.code}</p>
-            </>
-          ) : null}
-          {run.result ? (
-            <>
-              <p className="label">Result</p>
-              <p className="value">{run.result}</p>
             </>
           ) : null}
           {run.error ? (

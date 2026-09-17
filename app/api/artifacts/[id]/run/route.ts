@@ -42,6 +42,40 @@ export async function POST(request: Request, { params }: Params) {
     { runId },
   );
 
+  // #region agent log
+  fetch("http://127.0.0.1:7664/ingest/fd9e0927-3b2b-4655-99d8-b10f5823d4d8", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Debug-Session-Id": "78d987",
+    },
+    body: JSON.stringify({
+      sessionId: "78d987",
+      runId,
+      hypothesisId: "C",
+      location: "app/api/artifacts/[id]/run/route.ts",
+      message: "replayArtifact finished",
+      data: {
+        artifactId: id,
+        status: result.status,
+        code: "code" in result ? result.code : null,
+        message:
+          "message" in result && typeof result.message === "string"
+            ? result.message.slice(0, 200)
+            : null,
+        inputKeyCount: Object.keys(body.inputs as object).length,
+        requiredInputCount: Object.values(artifact.inputs).filter(
+          (d) => d.required,
+        ).length,
+        optionalWithDefault: Object.entries(artifact.inputs)
+          .filter(([, d]) => !d.required && d.default !== undefined)
+          .map(([k]) => k),
+      },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
+
   const status = result.status === "success" ? 200 : 422;
   return NextResponse.json({ ...result, runId }, { status });
 }

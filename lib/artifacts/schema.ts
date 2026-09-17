@@ -92,21 +92,43 @@ const ReplayStepPressKeySchema = z.object({
   key: z.string(),
 });
 
+const ReplayStepSetCheckedSchema = z.object({
+  action: z.literal("set_checked"),
+  target: ReplayTargetSchema,
+  value: ArtifactValueSchema,
+});
+
 export const ReplayStepSchema = z.discriminatedUnion("action", [
   ReplayStepNavigateSchema,
   ReplayStepClickSchema,
   ReplayStepTypeSchema,
   ReplayStepSelectSchema,
   ReplayStepPressKeySchema,
+  ReplayStepSetCheckedSchema,
 ]);
 
 export type ReplayStep = z.infer<typeof ReplayStepSchema>;
 
+/** Form field facts captured before a commit click. Not replay matchers. */
+export const RecordedFormFieldSchema = z.object({
+  target: RecordedTargetSchema,
+  controlType: z.enum(["text", "textarea", "select", "checkbox", "radio"]),
+  value: z.union([z.string(), z.boolean()]),
+  label: z.string().nullable().optional(),
+  name: z.string().nullable().optional(),
+  options: z.array(z.string()).optional(),
+});
+
+export type RecordedFormField = z.infer<typeof RecordedFormFieldSchema>;
+
 export const ArtifactInputDefSchema = z.object({
-  type: z.literal("string"),
+  type: z.enum(["string", "boolean"]),
   required: z.boolean(),
   description: z.string().optional(),
+  default: z.union([z.string(), z.boolean()]).optional(),
 });
+
+export type ArtifactInputDef = z.infer<typeof ArtifactInputDefSchema>;
 
 export const ArtifactOutputSchema = z.object({
   name: z.string(),

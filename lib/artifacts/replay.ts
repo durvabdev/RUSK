@@ -38,8 +38,45 @@ function resolveValue(
 ): string | null {
   if (value.source === "literal") return value.value;
   const raw = inputs[value.name];
-  if (typeof raw !== "string" || !raw.trim()) return null;
-  return raw;
+  if (typeof raw === "boolean") return raw ? "true" : "false";
+  if (typeof raw === "number") return String(raw);
+  if (typeof raw === "string" && raw.trim()) return raw;
+  return null;
+}
+
+/** True when a missing input should skip the step (optional, leave page as-is). */
+function shouldSkipOptionalInput(
+  value: ArtifactValue,
+  inputDefs: WorkflowArtifact["inputs"],
+): boolean {
+  if (value.source !== "input") return false;
+  const def = inputDefs[value.name];
+  return Boolean(def && !def.required);
+}
+
+function parseCheckedDesired(raw: string): boolean | string {
+  const lower = raw.trim().toLowerCase();
+  if (lower === "true" || lower === "1" || lower === "yes") return true;
+  if (lower === "false" || lower === "0" || lower === "no") return false;
+  return raw.trim();
+}
+
+function applyInputDefaults(
+  inputs: Record<string, unknown>,
+  defs: WorkflowArtifact["inputs"],
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...inputs };
+  for (const [name, def] of Object.entries(defs)) {
+    const cur = out[name];
+    const blank =
+      cur === undefined ||
+      cur === null ||
+      (typeof cur === "string" && !cur.trim());
+    if (blank && def.default !== undefined) {
+      out[name] = def.default;
+    }
+  }
+  return out;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -242,9 +279,12 @@ export function createArtifactTool(
   const shape: Record<string, z.ZodTypeAny> = {};
 
   for (const [key, def] of Object.entries(artifact.inputs)) {
-    shape[key] = def.required
-      ? z.string().min(1)
-      : z.string().optional();
+    const base =
+      def.type === "boolean"
+        ? z.union([z.boolean(), z.string()])
+        : z.string();
+    // All workflow inputs are optional at the tool boundary.
+    shape[key] = base.optional();
   }
 
   const inputSchema = z.object(shape);
@@ -357,7 +397,40 @@ export async function replayArtifact(
   for (const [name, def] of Object.entries(parsed.inputs)) {
     if (!def.required) continue;
     const v = inputs[name];
-    if (typeof v !== "string" || !v.trim()) {
+    const ok =
+      typeof v === "boolean" ||
+      (typeof v === "string" && v.trim().length > 0);
+    if (!ok) {
+      // #region agent log
+      fetch("http://127.0.0.1:7664/ingest/fd9e0927-3b2b-4655-99d8-b10f5823d4d8", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Debug-Session-Id": "78d987",
+        },
+        body: JSON.stringify({
+          sessionId: "78d987",
+          runId: options.runId ?? "replay",
+          hypothesisId: "B",
+          location: "lib/artifacts/replay.ts:input-validation",
+          message: "replay rejected missing required input",
+          data: {
+            missing: name,
+            requiredKeys: Object.entries(parsed.inputs)
+              .filter(([, d]) => d.required)
+              .map(([k]) => k),
+            providedNonEmpty: Object.entries(inputs)
+              .filter(([, val]) =>
+                typeof val === "boolean"
+                  ? true
+                  : typeof val === "string" && val.trim().length > 0,
+              )
+              .map(([k]) => k),
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       return done({
         status: "failure",
         code: "input_invalid",
@@ -365,6 +438,8 @@ export async function replayArtifact(
       });
     }
   }
+
+  const effectiveInputs = applyInputDefaults(inputs, parsed.inputs);
 
   {
     const blocked = checkPolicy({
@@ -437,7 +512,7 @@ export async function replayArtifact(
     const polled = await resolveWithPoll(
       browser,
       step.target,
-      inputs,
+      effectiveInputs,
       conditions,
       poll,
     );
@@ -516,8 +591,10 @@ export async function replayArtifact(
     currentUrl = polled.observation.url ?? currentUrl;
     const element = await elementMetaForPolicy(browser, polled.ref);
     {
+      const policyAction =
+        step.action === "set_checked" ? "click" : step.action;
       const blocked = checkPolicy({
-        action: step.action,
+        action: policyAction,
         currentUrl,
         element,
         stepIndex,
@@ -612,8 +689,16 @@ export async function replayArtifact(
     }
 
     if (step.action === "type") {
-      const text = resolveValue(step.value, inputs);
+      const text = resolveValue(step.value, effectiveInputs);
       if (text === null) {
+        if (shouldSkipOptionalInput(step.value, parsed.inputs)) {
+          await appendRunEvent(runId, {
+            event: "step_finished",
+            stepIndex,
+            result: "skipped_optional",
+          });
+          continue;
+        }
         return done({
           status: "failure",
           code: "input_invalid",
@@ -655,8 +740,16 @@ export async function replayArtifact(
     }
 
     if (step.action === "select") {
-      const value = resolveValue(step.value, inputs);
+      const value = resolveValue(step.value, effectiveInputs);
       if (value === null) {
+        if (shouldSkipOptionalInput(step.value, parsed.inputs)) {
+          await appendRunEvent(runId, {
+            event: "step_finished",
+            stepIndex,
+            result: "skipped_optional",
+          });
+          continue;
+        }
         return done({
           status: "failure",
           code: "input_invalid",
@@ -689,6 +782,112 @@ export async function replayArtifact(
           ),
         });
       }
+      await appendRunEvent(runId, {
+        event: "step_finished",
+        stepIndex,
+        result: "ok",
+      });
+      continue;
+    }
+
+    if (step.action === "set_checked") {
+      const raw = resolveValue(step.value, effectiveInputs);
+      if (raw === null) {
+        if (shouldSkipOptionalInput(step.value, parsed.inputs)) {
+          await appendRunEvent(runId, {
+            event: "step_finished",
+            stepIndex,
+            result: "skipped_optional",
+          });
+          continue;
+        }
+        return done({
+          status: "failure",
+          code: "input_invalid",
+          message: "Missing input for set_checked step",
+          context: {
+            stepIndex,
+            action: "set_checked",
+            expected: summarizeTarget(step.target),
+          },
+        });
+      }
+
+      const desired = parseCheckedDesired(raw);
+      let ref = polled.ref;
+
+      // Non-boolean string: treat as radio option label — re-resolve by name.
+      if (typeof desired === "string") {
+        const optionTarget = {
+          ...step.target,
+          name: desired,
+          text: desired,
+        };
+        const optionResolved = await resolveTarget(
+          optionTarget,
+          polled.observation.snapshot,
+          browser,
+          effectiveInputs,
+        );
+        if (!optionResolved.ok) {
+          return done({
+            status: "recoverable",
+            code: "target_missing",
+            message: `Could not resolve radio/option "${desired}"`,
+            retryable: true,
+            context: {
+              stepIndex,
+              action: "set_checked",
+              expected: desired,
+            },
+          });
+        }
+        ref = optionResolved.ref;
+      }
+
+      let inspected;
+      try {
+        inspected = await browser.inspectElement(ref);
+      } catch {
+        return done({
+          status: "failure",
+          code: "step_failed",
+          message: "Could not inspect checkbox/radio for set_checked",
+          context: {
+            stepIndex,
+            action: "set_checked",
+            expected: summarizeTarget(step.target),
+          },
+        });
+      }
+
+      const currentlyChecked = inspected.checked === true;
+      const wantChecked = typeof desired === "boolean" ? desired : true;
+
+      if (currentlyChecked !== wantChecked) {
+        const result = await browser.click(ref);
+        if (!result.ok) {
+          await appendRunEvent(runId, {
+            event: "step_finished",
+            stepIndex,
+            result: "error",
+          });
+          return done({
+            status: "failure",
+            code: "step_failed",
+            message: result.text ?? "set_checked click failed",
+            context: contextFrom(
+              {
+                stepIndex,
+                action: "set_checked",
+                expected: summarizeTarget(step.target),
+              },
+              polled.observation,
+            ),
+          });
+        }
+      }
+
       await appendRunEvent(runId, {
         event: "step_finished",
         stepIndex,

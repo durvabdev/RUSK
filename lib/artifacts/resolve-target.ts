@@ -38,6 +38,8 @@ function resolveValue(
 ): string | null {
   if (value.source === "literal") return value.value;
   const raw = inputs[value.name];
+  if (typeof raw === "boolean") return raw ? "true" : "false";
+  if (typeof raw === "number") return String(raw);
   if (typeof raw !== "string" || !raw.trim()) return null;
   return raw;
 }

@@ -5,7 +5,8 @@ import type {
 import { appendRunEvent } from "../../evidence/run-log";
 import type { ToolRegistry } from "../../tools/registry";
 import { parseSnapshotCandidates } from "../../artifacts/snapshot-parser";
-import type { RecordedTarget } from "../../artifacts/schema";
+import type { RecordedFormField, RecordedTarget } from "../../artifacts/schema";
+import { shouldCaptureFormFields } from "../../artifacts/form-capture";
 import type {
   AgentState,
   AgentStateUpdate,
@@ -91,10 +92,12 @@ export function createExecuteNode(
 
     // Capture facts while the MCP ref is still valid (before the action mutates the page).
     let recordedTarget: AgentStep["recordedTarget"];
+    let inspection: ElementInspection | null = null;
+    let recordedFormFields: RecordedFormField[] | undefined;
     const ref = toolRef(toolCall.arguments);
     if (CAPTURE_TOOLS.has(toolCall.name) && ref) {
       try {
-        const inspection = await browser.inspectElement(ref);
+        inspection = await browser.inspectElement(ref);
         recordedTarget =
           recordedTargetFromInspection(inspection, ref) ?? undefined;
       } catch {
@@ -116,6 +119,38 @@ export function createExecuteNode(
           recordedTarget = { ...recordedTarget, name: fromSnapshot.name };
         }
       }
+
+      if (shouldCaptureFormFields(toolCall.name, inspection)) {
+        try {
+          const fields = await browser.captureFormFields(ref);
+          if (fields.length > 0) recordedFormFields = fields;
+          // #region agent log
+          fetch("http://127.0.0.1:7664/ingest/fd9e0927-3b2b-4655-99d8-b10f5823d4d8", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Debug-Session-Id": "78d987",
+            },
+            body: JSON.stringify({
+              sessionId: "78d987",
+              runId: state.runId,
+              hypothesisId: "A",
+              location: "lib/agent/nodes/execute.ts:form-capture",
+              message: "form field capture",
+              data: {
+                tool: toolCall.name,
+                fieldCount: fields.length,
+                controlTypes: fields.map((f) => f.controlType),
+                labels: fields.map((f) => f.label ?? f.name ?? null),
+              },
+              timestamp: Date.now(),
+            }),
+          }).catch(() => {});
+          // #endregion
+        } catch {
+          /* non-fatal — compile still works without defaults */
+        }
+      }
     }
 
     const toolResult = await registry.invoke(toolCall);
@@ -132,6 +167,9 @@ export function createExecuteNode(
       toolCall,
       toolResult,
       ...(toolResult.ok && recordedTarget ? { recordedTarget } : {}),
+      ...(toolResult.ok && recordedFormFields?.length
+        ? { recordedFormFields }
+        : {}),
       timestamp: Date.now(),
     };
 

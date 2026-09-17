@@ -139,6 +139,7 @@ function inspection(partial: Partial<ElementInspection>): ElementInspection {
     disabled: false,
     readOnly: false,
     value: null,
+    checked: null,
     rect: { x: 0, y: 0, width: 0, height: 0 },
     ...partial,
   };
@@ -216,6 +217,7 @@ function mockBrowserForMarcusReplay(): {
       return inspection({});
     },
     inspectDom: async () => ({ url: "", title: "", candidates: [] }),
+    captureFormFields: async () => [],
   };
 
   return { browser, clickedRefs, navigatedUrls };
@@ -279,6 +281,7 @@ function baseBrowser(
     scroll: async () => ({ ok: true }),
     inspectElement: async () => inspection({ rect: { x: 0, y: 0, width: 10, height: 10 } }),
     inspectDom: async () => ({ url: "", title: "", candidates: [] }),
+    captureFormFields: async () => [],
     ...overrides,
   };
 }

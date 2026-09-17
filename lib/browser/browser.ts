@@ -37,6 +37,8 @@ export type ElementInspection = {
   disabled: boolean;
   readOnly: boolean;
   value: string | null;
+  /** Checked state for checkbox/radio/switch; null when not applicable. */
+  checked: boolean | null;
   rect: {
     x: number;
     y: number;
@@ -72,6 +74,14 @@ export interface BrowserController {
 
   /** MCP-ref inspection via fixed browser_evaluate (no model-supplied JS). */
   inspectElement(ref: string): Promise<ElementInspection>;
+
+  /**
+   * Capture configurable form fields near a commit control (fixed evaluate).
+   * Returns empty array when the ref has no associated form/container fields.
+   */
+  captureFormFields(commitRef: string): Promise<
+    import("../artifacts/schema").RecordedFormField[]
+  >;
 
   /** Compact DOM candidates via Playwright connectOverCDP. */
   inspectDom(limit?: number): Promise<DomInspection>;

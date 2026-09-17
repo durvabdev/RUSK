@@ -3,6 +3,7 @@ import type { AgentState } from "../agent/state";
 import type {
   ArtifactOutput,
   ArtifactValue,
+  RecordedFormField,
   RecordedTarget,
   ReplayStep,
   ReplayTarget,
@@ -141,6 +142,67 @@ function inferInputName(
   let n = 1;
   while (usedNames.has(`input${n}`)) n += 1;
   return `input${n}`;
+}
+
+/** Deterministic camelCase from a field label (form defaults). */
+export function paramNameFromLabel(
+  label: string | null | undefined,
+  usedNames: Set<string>,
+): string {
+  const raw = (label ?? "").trim();
+  if (!raw) {
+    let n = 1;
+    while (usedNames.has(`input${n}`)) n += 1;
+    return `input${n}`;
+  }
+
+  const words = raw
+    .replace(/[^a-zA-Z0-9]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length === 0) {
+    let n = 1;
+    while (usedNames.has(`input${n}`)) n += 1;
+    return `input${n}`;
+  }
+
+  let base = words
+    .map((w, i) => {
+      const lower = w.toLowerCase();
+      if (i === 0) return lower;
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join("")
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .slice(0, 48);
+
+  if (!base || /^\d/.test(base)) {
+    base = `input${base || "1"}`;
+  }
+
+  if (!usedNames.has(base)) return base;
+  let n = 2;
+  while (usedNames.has(`${base}${n}`)) n += 1;
+  return `${base}${n}`;
+}
+
+/** Semantic identity for deduping form fields vs explicit type/select (no refs). */
+export function targetIdentity(
+  target: Pick<
+    RecordedTarget,
+    "testId" | "role" | "name" | "text" | "placeholder"
+  > & { label?: string | null },
+): string | null {
+  if (target.testId) return `testid:${normalize(target.testId)}`;
+  if (target.role && target.name) {
+    return `role:${normalize(target.role)}|name:${normalize(target.name)}`;
+  }
+  if (target.name) return `name:${normalize(target.name)}`;
+  if (target.label) return `label:${normalize(target.label)}`;
+  if (target.text) return `text:${normalize(target.text)}`;
+  if (target.placeholder) return `ph:${normalize(target.placeholder)}`;
+  return null;
 }
 
 function generalizeArtifactName(
@@ -524,13 +586,79 @@ export function compileArtifact(
     return name;
   }
 
-  function registerInput(name: string, description?: string) {
+  function registerInput(
+    name: string,
+    description?: string,
+    opts?: {
+      required?: boolean;
+      type?: "string" | "boolean";
+      default?: string | boolean;
+    },
+  ) {
     if (!inputs[name]) {
       inputs[name] = {
-        type: "string",
-        required: true,
+        type: opts?.type ?? "string",
+        // Workflow inputs are always optional; empty → skip step / use default / fail later.
+        required: false,
         ...(description ? { description } : {}),
+        ...(opts?.default !== undefined ? { default: opts.default } : {}),
       };
+    }
+  }
+
+  /** Target identity → already-parameterized input name. */
+  const parameterizedByTarget = new Map<string, string>();
+
+  function rememberTarget(recorded: RecordedTarget, inputName: string) {
+    const id = targetIdentity(recorded);
+    if (id) parameterizedByTarget.set(id, inputName);
+  }
+
+  function emitFormDefaultSteps(fields: RecordedFormField[]) {
+    for (const field of fields) {
+      const id = targetIdentity({
+        ...field.target,
+        label: field.label,
+      });
+      if (id && parameterizedByTarget.has(id)) continue;
+
+      const hint =
+        field.label ?? field.name ?? field.target.name ?? field.target.placeholder;
+      const inputName = paramNameFromLabel(hint, usedNames);
+      usedNames.add(inputName);
+
+      const isBool =
+        field.controlType === "checkbox" ||
+        (field.controlType === "radio" && typeof field.value === "boolean");
+
+      // Product defaults (select/check) keep default for replay-when-omitted.
+      // Text/textarea: optional, no baked value (PII) — replay skips if caller leaves empty.
+      const keepDefault =
+        field.controlType === "select" ||
+        field.controlType === "checkbox" ||
+        field.controlType === "radio";
+
+      registerInput(inputName, hint ?? undefined, {
+        required: false,
+        type: isBool || typeof field.value === "boolean" ? "boolean" : "string",
+        ...(keepDefault ? { default: field.value } : {}),
+      });
+
+      if (id) parameterizedByTarget.set(id, inputName);
+
+      const value: ArtifactValue = { source: "input", name: inputName };
+      const target = generalizeInputTarget(field.target);
+
+      if (field.controlType === "select") {
+        steps.push({ action: "select", target, value });
+      } else if (
+        field.controlType === "checkbox" ||
+        field.controlType === "radio"
+      ) {
+        steps.push({ action: "set_checked", target, value });
+      } else {
+        steps.push({ action: "type", target, value });
+      }
     }
   }
 
@@ -573,6 +701,9 @@ export function compileArtifact(
     const recorded = entry.recordedTarget;
 
     if (name === "click") {
+      if (entry.recordedFormFields?.length) {
+        emitFormDefaultSteps(entry.recordedFormFields);
+      }
       const target = generalizeTarget(recorded, ctx, { isClick: true });
       steps.push({ action: "click", target });
       continue;
@@ -594,9 +725,14 @@ export function compileArtifact(
       const inputName = nextInputName(literal, fieldHint);
       registerInput(inputName, fieldHint);
       registerParameterizedInput(ctx, inputName, literal);
+      rememberTarget(recorded, inputName);
       const value: ArtifactValue = { source: "input", name: inputName };
       const target = generalizeInputTarget(recorded);
       steps.push({ action: "type", target, value });
+      // Sibling form controls (untouched defaults) → optional inputs.
+      if (entry.recordedFormFields?.length) {
+        emitFormDefaultSteps(entry.recordedFormFields);
+      }
       continue;
     }
 
@@ -608,11 +744,15 @@ export function compileArtifact(
       const inputName = nextInputName(literal, recorded.name);
       registerInput(inputName);
       registerParameterizedInput(ctx, inputName, literal);
+      rememberTarget(recorded, inputName);
       steps.push({
         action: "select",
         target: generalizeInputTarget(recorded),
         value: { source: "input", name: inputName },
       });
+      if (entry.recordedFormFields?.length) {
+        emitFormDefaultSteps(entry.recordedFormFields);
+      }
     }
   }
 
@@ -627,6 +767,9 @@ export function compileArtifact(
     if (!pendingAlreadyInSteps(steps, recorded)) {
       const name = pending.toolCall.name;
       if (name === "click") {
+        if (pending.recordedFormFields?.length) {
+          emitFormDefaultSteps(pending.recordedFormFields);
+        }
         steps.push({
           action: "click",
           target: generalizeTarget(recorded, ctx, { isClick: true }),
@@ -646,6 +789,7 @@ export function compileArtifact(
         const inputName = nextInputName(literal, fieldHint);
         registerInput(inputName, fieldHint);
         registerParameterizedInput(ctx, inputName, literal);
+        rememberTarget(recorded, inputName);
         steps.push({
           action: "type",
           target: generalizeInputTarget(recorded),
@@ -659,6 +803,7 @@ export function compileArtifact(
         const inputName = nextInputName(literal, recorded.name);
         registerInput(inputName);
         registerParameterizedInput(ctx, inputName, literal);
+        rememberTarget(recorded, inputName);
         steps.push({
           action: "select",
           target: generalizeInputTarget(recorded),

@@ -21,6 +21,7 @@ function inspection(partial: Partial<ElementInspection> = {}): ElementInspection
     disabled: false,
     readOnly: false,
     value: null,
+    checked: null,
     rect: { x: 0, y: 0, width: 40, height: 20 },
     ...partial,
   };
@@ -41,6 +42,7 @@ function mockBrowser(
     scroll: async () => ({ ok: true }),
     inspectElement: async (ref) => byRef[ref] ?? inspection(),
     inspectDom: async () => ({ url: "", title: "", candidates: [] }),
+    captureFormFields: async () => [],
   };
 }
 

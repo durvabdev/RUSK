@@ -26,6 +26,7 @@ function inspection(
     disabled: false,
     readOnly: false,
     value: null,
+    checked: null,
     rect: { x: 0, y: 0, width: 10, height: 10 },
     ...partial,
   };
