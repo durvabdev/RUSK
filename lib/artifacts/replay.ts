@@ -401,36 +401,6 @@ export async function replayArtifact(
       typeof v === "boolean" ||
       (typeof v === "string" && v.trim().length > 0);
     if (!ok) {
-      // #region agent log
-      fetch("http://127.0.0.1:7664/ingest/fd9e0927-3b2b-4655-99d8-b10f5823d4d8", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Debug-Session-Id": "78d987",
-        },
-        body: JSON.stringify({
-          sessionId: "78d987",
-          runId: options.runId ?? "replay",
-          hypothesisId: "B",
-          location: "lib/artifacts/replay.ts:input-validation",
-          message: "replay rejected missing required input",
-          data: {
-            missing: name,
-            requiredKeys: Object.entries(parsed.inputs)
-              .filter(([, d]) => d.required)
-              .map(([k]) => k),
-            providedNonEmpty: Object.entries(inputs)
-              .filter(([, val]) =>
-                typeof val === "boolean"
-                  ? true
-                  : typeof val === "string" && val.trim().length > 0,
-              )
-              .map(([k]) => k),
-          },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
       return done({
         status: "failure",
         code: "input_invalid",

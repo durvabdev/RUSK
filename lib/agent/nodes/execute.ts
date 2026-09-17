@@ -124,29 +124,6 @@ export function createExecuteNode(
         try {
           const fields = await browser.captureFormFields(ref);
           if (fields.length > 0) recordedFormFields = fields;
-          // #region agent log
-          fetch("http://127.0.0.1:7664/ingest/fd9e0927-3b2b-4655-99d8-b10f5823d4d8", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "X-Debug-Session-Id": "78d987",
-            },
-            body: JSON.stringify({
-              sessionId: "78d987",
-              runId: state.runId,
-              hypothesisId: "A",
-              location: "lib/agent/nodes/execute.ts:form-capture",
-              message: "form field capture",
-              data: {
-                tool: toolCall.name,
-                fieldCount: fields.length,
-                controlTypes: fields.map((f) => f.controlType),
-                labels: fields.map((f) => f.label ?? f.name ?? null),
-              },
-              timestamp: Date.now(),
-            }),
-          }).catch(() => {});
-          // #endregion
         } catch {
           /* non-fatal — compile still works without defaults */
         }

@@ -137,63 +137,15 @@ export function createDecideNode(
       parameters: z.toJSONSchema(tool.schema),
     }));
 
-    let modelDecision;
-    try {
-      modelDecision = await decisionModel.invoke([
-        new SystemMessage(ACTOR_SYSTEM_PROMPT),
-        new HumanMessage(
-          JSON.stringify({
-            context,
-            tools,
-          }),
-        ),
-      ]);
-    } catch (err) {
-      // #region agent log
-      const msg = err instanceof Error ? err.message : String(err);
-      fetch("http://127.0.0.1:7664/ingest/fd9e0927-3b2b-4655-99d8-b10f5823d4d8", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Debug-Session-Id": "78d987",
-        },
-        body: JSON.stringify({
-          sessionId: "78d987",
-          runId: "pre-fix",
-          hypothesisId: "A",
-          location: "lib/agent/nodes/decide.ts:invoke",
-          message: "decide model invoke failed",
-          data: {
-            errorMessage: msg.slice(0, 500),
-            mentionsTemperature: /temperature/i.test(msg),
-            mentionsMaxTokens: /max_?tokens|max_output_tokens/i.test(msg),
-            mentionsUnsupported: /unsupported parameter/i.test(msg),
-          },
-          timestamp: Date.now(),
+    const modelDecision = await decisionModel.invoke([
+      new SystemMessage(ACTOR_SYSTEM_PROMPT),
+      new HumanMessage(
+        JSON.stringify({
+          context,
+          tools,
         }),
-      }).catch(() => {});
-      // #endregion
-      throw err;
-    }
-
-    // #region agent log
-    fetch("http://127.0.0.1:7664/ingest/fd9e0927-3b2b-4655-99d8-b10f5823d4d8", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Debug-Session-Id": "78d987",
-      },
-      body: JSON.stringify({
-        sessionId: "78d987",
-        runId: "pre-fix",
-        hypothesisId: "C",
-        location: "lib/agent/nodes/decide.ts:invoke-ok",
-        message: "decide model invoke succeeded",
-        data: { decisionType: (modelDecision as { type?: string })?.type ?? null },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
+      ),
+    ]);
 
     const decision = normalizeDecision(modelDecision);
 
