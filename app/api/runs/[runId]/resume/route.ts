@@ -7,6 +7,12 @@ import {
   type HitlResumeAction,
 } from "@/lib/agent/hitl";
 import { getAgentRuntime } from "@/lib/agent/runtime";
+import {
+  BrowserControlError,
+  releaseBrowserControl,
+  resumeAutomation,
+  transferToHuman,
+} from "@/lib/browser/control";
 
 export const runtime = "nodejs";
 
@@ -29,7 +35,10 @@ export async function POST(request: Request, context: RouteContext) {
     body = await request.json();
   } catch {
     return NextResponse.json(
-      { error: 'Body must be { "action": "resume" | "cancel" }', status: "failed" },
+      {
+        error: 'Body must be { "action": "resume" | "cancel" }',
+        status: "failed",
+      },
       { status: 400 },
     );
   }
@@ -43,20 +52,45 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   try {
+    if (action === "resume") {
+      resumeAutomation(runId);
+    }
+
     const { graph } = await getAgentRuntime();
     const result = await resumeInterruptedRun(
       graph,
       runId,
       action as HitlResumeAction,
     );
+
+    if (result.status === "waiting_for_human") {
+      transferToHuman(runId);
+    } else {
+      releaseBrowserControl(runId);
+    }
+
     return NextResponse.json(result, { status: 200 });
   } catch (err) {
+    if (err instanceof BrowserControlError) {
+      return NextResponse.json(
+        {
+          runId,
+          status: "failed",
+          code: err.code,
+          error: err.message,
+        },
+        { status: 409 },
+      );
+    }
+
     const interrupted = interruptFromThrown(err);
     if (interrupted) {
+      transferToHuman(runId);
       const waiting = await waitingResponse(runId, interrupted);
       return NextResponse.json(waiting, { status: 200 });
     }
 
+    releaseBrowserControl(runId);
     const message =
       err instanceof Error ? err.message : String(err);
     const missing =

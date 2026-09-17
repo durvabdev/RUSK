@@ -41,6 +41,19 @@ type ArtifactRunResult =
       context?: unknown;
     }
   | {
+      status: "waiting_for_human";
+      runId: string;
+      stepIndex: number;
+      humanRequest: { type: string; message: string };
+      replayError: {
+        status: "recoverable";
+        code: string;
+        message: string;
+        retryable: true;
+        context?: unknown;
+      };
+    }
+  | {
       status: "recoverable";
       code: string;
       message: string;
@@ -96,6 +109,7 @@ export default function Home() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [inputValues, setInputValues] = useState<Record<string, string>>({});
   const [replayRunningId, setReplayRunningId] = useState<string | null>(null);
+  const [replayResumeBusy, setReplayResumeBusy] = useState(false);
   const [replayResults, setReplayResults] = useState<
     Record<string, ArtifactRunResult>
   >({});
@@ -149,28 +163,6 @@ export default function Home() {
       return;
     }
     setExpandedId(artifact.id);
-    // #region agent log
-    fetch("http://127.0.0.1:7664/ingest/fd9e0927-3b2b-4655-99d8-b10f5823d4d8", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Debug-Session-Id": "78d987",
-      },
-      body: JSON.stringify({
-        sessionId: "78d987",
-        runId: "ui-expand",
-        hypothesisId: "B",
-        location: "app/page.tsx:toggleArtifact",
-        message: "expanded workflow inputs",
-        data: {
-          artifactId: artifact.id,
-          inputCount: Object.keys(artifact.inputs ?? {}).length,
-          inputKeys: Object.keys(artifact.inputs ?? {}),
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     setInputValues((prev) => {
       const next = { ...prev };
       for (const key of Object.keys(artifact.inputs)) {
@@ -180,38 +172,125 @@ export default function Home() {
     });
   }
 
+  function applyReplayResponse(
+    artifactId: string,
+    data: Record<string, unknown> & {
+      status?: string;
+      outputs?: Record<string, string>;
+      message?: string;
+      error?: string;
+      code?: string;
+      runId?: string;
+      stepIndex?: number;
+      context?: unknown;
+      humanRequest?: { type?: string; message?: string };
+      replayError?: {
+        status?: string;
+        code?: string;
+        message?: string;
+        retryable?: boolean;
+        context?: unknown;
+      };
+    },
+    httpStatus: number,
+  ) {
+    const runId = typeof data.runId === "string" ? data.runId : undefined;
+
+    if (data.status === "success" && data.outputs) {
+      setReplayResults((prev) => ({
+        ...prev,
+        [artifactId]: {
+          status: "success",
+          outputs: data.outputs!,
+          ...(runId ? { runId } : {}),
+        },
+      }));
+      return;
+    }
+
+    if (data.status === "business_outcome" && data.code && data.message) {
+      setReplayResults((prev) => ({
+        ...prev,
+        [artifactId]: {
+          status: "business_outcome",
+          code: String(data.code),
+          message: String(data.message),
+          ...(runId ? { runId } : {}),
+          ...(data.context ? { context: data.context } : {}),
+        },
+      }));
+      return;
+    }
+
+    if (
+      data.status === "waiting_for_human" &&
+      runId &&
+      data.humanRequest &&
+      typeof data.humanRequest.message === "string" &&
+      data.replayError &&
+      typeof data.replayError.code === "string" &&
+      typeof data.replayError.message === "string"
+    ) {
+      const humanMessage = data.humanRequest.message;
+      const humanType = String(data.humanRequest.type ?? "input");
+      const errCode = data.replayError.code;
+      const errMessage = data.replayError.message;
+      const errContext = data.replayError.context;
+      setReplayResults((prev) => ({
+        ...prev,
+        [artifactId]: {
+          status: "waiting_for_human",
+          runId,
+          stepIndex:
+            typeof data.stepIndex === "number" ? data.stepIndex : 0,
+          humanRequest: {
+            type: humanType,
+            message: humanMessage,
+          },
+          replayError: {
+            status: "recoverable",
+            code: errCode,
+            message: errMessage,
+            retryable: true,
+            ...(errContext ? { context: errContext } : {}),
+          },
+        },
+      }));
+      return;
+    }
+
+    if (data.status === "failure" && data.code) {
+      setReplayResults((prev) => ({
+        ...prev,
+        [artifactId]: {
+          status: "failure",
+          code: String(data.code),
+          message: String(data.message || data.error || "Replay failed"),
+          ...(runId ? { runId } : {}),
+          ...(data.context ? { context: data.context } : {}),
+        },
+      }));
+      return;
+    }
+
+    setReplayResults((prev) => ({
+      ...prev,
+      [artifactId]: {
+        status: "failure",
+        message: String(
+          data.message || data.error || `Request failed (${httpStatus})`,
+        ),
+        code: String(data.code || "step_failed"),
+        ...(runId ? { runId } : {}),
+      },
+    }));
+  }
+
   async function onRunWorkflow(artifact: ArtifactSummary) {
     const inputs: Record<string, string> = {};
     for (const [key] of Object.entries(artifact.inputs)) {
       inputs[key] = (inputValues[key] ?? "").trim();
     }
-
-    // #region agent log
-    fetch("http://127.0.0.1:7664/ingest/fd9e0927-3b2b-4655-99d8-b10f5823d4d8", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Debug-Session-Id": "78d987",
-      },
-      body: JSON.stringify({
-        sessionId: "78d987",
-        runId: "wf-pre",
-        hypothesisId: "A",
-        location: "app/page.tsx:onRunWorkflow:request",
-        message: "sending workflow run request",
-        data: {
-          artifactId: artifact.id,
-          inputKeys: Object.keys(inputs),
-          filledKeys: Object.entries(inputs)
-            .filter(([, v]) => v.trim())
-            .map(([k]) => k),
-          requiredCount: Object.values(artifact.inputs).filter((d) => d.required)
-            .length,
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
 
     setReplayRunningId(artifact.id);
     try {
@@ -232,92 +311,7 @@ export default function Home() {
         runId?: string;
         context?: unknown;
       };
-      const runId = typeof data.runId === "string" ? data.runId : undefined;
-      // #region agent log
-      fetch("http://127.0.0.1:7664/ingest/fd9e0927-3b2b-4655-99d8-b10f5823d4d8", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Debug-Session-Id": "78d987",
-        },
-        body: JSON.stringify({
-          sessionId: "78d987",
-          runId: runId ?? "wf-resp",
-          hypothesisId: "B",
-          location: "app/page.tsx:onRunWorkflow:response",
-          message: "workflow run API response",
-          data: {
-            httpStatus: res.status,
-            status: data.status ?? null,
-            code: data.code ?? null,
-            message:
-              typeof data.message === "string"
-                ? data.message.slice(0, 200)
-                : null,
-            error:
-              typeof data.error === "string" ? data.error.slice(0, 200) : null,
-            hasOutputs: Boolean(data.outputs),
-          },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
-      if (data.status === "success" && data.outputs) {
-        setReplayResults((prev) => ({
-          ...prev,
-          [artifact.id]: {
-            status: "success",
-            outputs: data.outputs!,
-            ...(runId ? { runId } : {}),
-          },
-        }));
-      } else if (data.status === "business_outcome" && data.code && data.message) {
-        setReplayResults((prev) => ({
-          ...prev,
-          [artifact.id]: {
-            status: "business_outcome",
-            code: String(data.code),
-            message: String(data.message),
-            ...(runId ? { runId } : {}),
-            ...(data.context ? { context: data.context } : {}),
-          },
-        }));
-      } else if (data.status === "recoverable" && data.code && data.message) {
-        setReplayResults((prev) => ({
-          ...prev,
-          [artifact.id]: {
-            status: "recoverable",
-            code: String(data.code),
-            message: String(data.message),
-            retryable: true,
-            ...(runId ? { runId } : {}),
-            ...(data.context ? { context: data.context } : {}),
-          },
-        }));
-      } else if (data.status === "failure" && data.code) {
-        setReplayResults((prev) => ({
-          ...prev,
-          [artifact.id]: {
-            status: "failure",
-            code: String(data.code),
-            message: String(data.message || data.error || "Replay failed"),
-            ...(runId ? { runId } : {}),
-            ...(data.context ? { context: data.context } : {}),
-          },
-        }));
-      } else {
-        setReplayResults((prev) => ({
-          ...prev,
-          [artifact.id]: {
-            status: "failure",
-            message: String(
-              data.message || data.error || `Request failed (${res.status})`,
-            ),
-            code: String(data.code || "step_failed"),
-            ...(runId ? { runId } : {}),
-          },
-        }));
-      }
+      applyReplayResponse(artifact.id, data, res.status);
     } catch (err) {
       setReplayResults((prev) => ({
         ...prev,
@@ -328,6 +322,43 @@ export default function Home() {
         },
       }));
     } finally {
+      setReplayRunningId(null);
+    }
+  }
+
+  async function onResumeReplay(artifact: ArtifactSummary) {
+    const current = replayResults[artifact.id];
+    if (!current || current.status !== "waiting_for_human") return;
+
+    setReplayResumeBusy(true);
+    setReplayRunningId(artifact.id);
+    try {
+      const res = await fetch(`/api/replays/${current.runId}/resume`, {
+        method: "POST",
+      });
+      const data = (await res.json().catch(() => ({}))) as Record<
+        string,
+        unknown
+      > & {
+        status?: string;
+        outputs?: Record<string, string>;
+        message?: string;
+        error?: string;
+        code?: string;
+        runId?: string;
+      };
+      applyReplayResponse(artifact.id, data, res.status);
+    } catch (err) {
+      setReplayResults((prev) => ({
+        ...prev,
+        [artifact.id]: {
+          status: "failure",
+          message: err instanceof Error ? err.message : String(err),
+          code: "step_failed",
+        },
+      }));
+    } finally {
+      setReplayResumeBusy(false);
       setReplayRunningId(null);
     }
   }
@@ -515,6 +546,44 @@ export default function Home() {
                         <div className="replay-result">
                           <p className="label">Status</p>
                           <p className="value">{replay.status}</p>
+                          {replay.status === "waiting_for_human" ? (
+                            <div className="hitl">
+                              <p className="label">
+                                {replay.humanRequest.type === "approval"
+                                  ? "Approval required"
+                                  : "Replay needs intervention"}
+                              </p>
+                              <p className="value">
+                                Step {replay.stepIndex + 1}
+                                {replay.replayError.context &&
+                                typeof replay.replayError.context === "object" &&
+                                replay.replayError.context !== null &&
+                                "action" in replay.replayError.context
+                                  ? ` — ${String((replay.replayError.context as { action?: string }).action)}`
+                                  : ""}
+                              </p>
+                              <p className="value muted">
+                                {replay.replayError.message}
+                              </p>
+                              <p className="muted">
+                                {replay.humanRequest.message}
+                              </p>
+                              <p className="muted">
+                                {replay.humanRequest.type === "approval"
+                                  ? "Perform the action in the live browser, then Resume Replay."
+                                  : "Fix the live browser state, then Resume Replay."}
+                              </p>
+                              <button
+                                type="button"
+                                disabled={replaying || replayResumeBusy}
+                                onClick={() => void onResumeReplay(artifact)}
+                              >
+                                {replayResumeBusy
+                                  ? "Working…"
+                                  : "Resume Replay"}
+                              </button>
+                            </div>
+                          ) : null}
                           {"message" in replay && replay.message ? (
                             <p className="value muted">{replay.message}</p>
                           ) : null}
@@ -561,9 +630,13 @@ export default function Home() {
           {run.status === "waiting_for_human" && run.humanRequest ? (
             <div className="hitl">
               <p className="label">Human required ({run.humanRequest.type})</p>
-              <p className="value">{run.humanRequest.message}</p>
+              <p className="value" style={{ whiteSpace: "pre-wrap" }}>
+                {run.humanRequest.message}
+              </p>
               <p className="muted">
-                Use the already-open browser while paused, then Resume or Cancel.
+                {run.humanRequest.type === "approval"
+                  ? "Perform the action in the live browser (test window), then Resume."
+                  : "Use the already-open browser while paused, then Resume or Cancel."}
               </p>
               <div className="hitl-actions">
                 <button

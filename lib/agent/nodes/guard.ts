@@ -3,6 +3,10 @@ import type {
   ElementInspection,
 } from "../../browser/browser";
 import {
+  formatApprovalRequest,
+  matchApprovalRule,
+} from "../../policy/approval";
+import {
   evaluateActionPolicy,
   type PolicyElementMeta,
 } from "../../policy/evaluate";
@@ -16,6 +20,12 @@ import {
 import type { RecordedFormField } from "../../artifacts/schema";
 import { shouldCaptureFormFields } from "../../artifacts/form-capture";
 import type { AgentState, AgentStateUpdate } from "../state";
+
+/** Kept for test import compat */
+export const POLICY_APPROVAL_REQUEST = formatApprovalRequest(
+  "Close account",
+  "Account closure is irreversible",
+);
 
 function toolRef(arguments_: unknown): string | null {
   if (
@@ -52,12 +62,6 @@ function toolKey(arguments_: unknown): string | null {
   const key = (arguments_ as { key: unknown }).key;
   return typeof key === "string" && key.length > 0 ? key : null;
 }
-
-export const POLICY_APPROVAL_REQUEST = {
-  type: "approval" as const,
-  message:
-    "Risky action requires human approval. Approve or take control in the live browser, then resume.",
-};
 
 function policyDenyUpdate(
   code: string,
@@ -127,7 +131,7 @@ export function createGuardNode(browser: BrowserController) {
       }
     }
 
-    // --- Shared action policy (before any execute) ---
+    // --- Inspect for approval match + origin/action policy ---
     let inspectedElement: ElementInspection | null = null;
 
     if (ref && ["click", "type", "select"].includes(call.name)) {
@@ -178,16 +182,35 @@ export function createGuardNode(browser: BrowserController) {
       getPolicyConfig(),
     );
 
-    if (policy.ok) {
-      return {};
+    // Hard denials only — discovery ignores classifier require_human.
+    if (
+      !policy.ok &&
+      policy.code !== "policy_requires_human"
+    ) {
+      return policyDenyUpdate(policy.code, policy.message);
     }
 
-    if (policy.code === "policy_requires_human") {
+    // Explicit approval policy (discovery) — not classifyRisk.
+    const approvalRule = matchApprovalRule(call.name, {
+      role: recordedFromInspect?.role ?? null,
+      name: recordedFromInspect?.name ?? recordedFromInspect?.ariaLabel ?? null,
+      text: recordedFromInspect?.text ?? null,
+      tag: recordedFromInspect?.tag ?? null,
+    });
+
+    if (approvalRule) {
+      const targetName =
+        recordedFromInspect?.name ??
+        recordedFromInspect?.ariaLabel ??
+        recordedFromInspect?.text ??
+        approvalRule.name;
+      const request = formatApprovalRequest(
+        targetName,
+        approvalRule.reason,
+      );
+
       let recordedFormFields: RecordedFormField[] | undefined;
-      if (
-        ref &&
-        shouldCaptureFormFields(call.name, inspectedElement)
-      ) {
+      if (ref && shouldCaptureFormFields(call.name, inspectedElement)) {
         try {
           const fields = await browser.captureFormFields(ref);
           if (fields.length > 0) recordedFormFields = fields;
@@ -202,15 +225,29 @@ export function createGuardNode(browser: BrowserController) {
           ? {
               toolCall: { name: call.name, arguments: call.arguments },
               recordedTarget: {
-                ...(ref ? { ref } : {}),
                 ...(recordedFromInspect.testId
                   ? { testId: recordedFromInspect.testId }
                   : {}),
-                ...(recordedFromInspect.role
-                  ? { role: recordedFromInspect.role }
+                ...((recordedFromInspect.role ||
+                  recordedFromInspect.tag === "button" ||
+                  recordedFromInspect.tag === "a")
+                  ? {
+                      role:
+                        recordedFromInspect.role ??
+                        (recordedFromInspect.tag === "button"
+                          ? "button"
+                          : recordedFromInspect.tag === "a"
+                            ? "link"
+                            : recordedFromInspect.role),
+                    }
                   : {}),
-                ...(recordedFromInspect.name
-                  ? { name: recordedFromInspect.name }
+                ...(recordedFromInspect.name || recordedFromInspect.text
+                  ? {
+                      name:
+                        recordedFromInspect.name ??
+                        recordedFromInspect.text ??
+                        undefined,
+                    }
                   : {}),
                 ...(recordedFromInspect.text
                   ? { text: recordedFromInspect.text }
@@ -226,19 +263,32 @@ export function createGuardNode(browser: BrowserController) {
             }
           : null;
 
+      // #region agent log
+      fetch('http://127.0.0.1:7664/ingest/fd9e0927-3b2b-4655-99d8-b10f5823d4d8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'78d987'},body:JSON.stringify({sessionId:'78d987',hypothesisId:'B',location:'guard.ts:approval',message:'guard set pendingCommit',data:{hasPendingCommit:!!pendingCommit,target:{testId:pendingCommit?.recordedTarget?.testId??null,role:pendingCommit?.recordedTarget?.role??null,name:pendingCommit?.recordedTarget?.name??null,text:pendingCommit?.recordedTarget?.text??null,tag:recordedFromInspect?.tag??null}},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+
       return {
         decision: {
           type: "human",
           call: null,
           reason: null,
-          request: POLICY_APPROVAL_REQUEST,
+          request,
         },
-        humanRequest: POLICY_APPROVAL_REQUEST,
+        humanRequest: request,
         status: "waiting_for_human",
+        approvalStatus: "pending",
+        pendingApproval: {
+          toolCall: { name: call.name, arguments: call.arguments },
+          target: {
+            role: recordedFromInspect?.role ?? "button",
+            name: targetName,
+          },
+          reason: approvalRule.reason,
+        },
         ...(pendingCommit ? { pendingCommit } : {}),
       };
     }
 
-    return policyDenyUpdate(policy.code, policy.message);
+    return {};
   };
 }

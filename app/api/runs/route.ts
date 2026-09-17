@@ -7,6 +7,12 @@ import {
   waitingResponse,
 } from "@/lib/agent/hitl";
 import { getAgentRuntime } from "@/lib/agent/runtime";
+import {
+  BrowserControlError,
+  claimAutomation,
+  releaseBrowserControl,
+  transferToHuman,
+} from "@/lib/browser/control";
 import { writeRunMeta } from "@/lib/evidence/run-log";
 import { evaluateActionPolicy } from "@/lib/policy/evaluate";
 
@@ -82,6 +88,8 @@ export async function POST(request: Request) {
   }
 
   try {
+    claimAutomation(runId, { supersede: true });
+
     const { graph, browser } =
       await getAgentRuntime();
 
@@ -109,17 +117,20 @@ export async function POST(request: Request) {
     } catch (err) {
       const interrupted = interruptFromThrown(err);
       if (interrupted) {
+        transferToHuman(runId);
         const waiting = await waitingResponse(runId, interrupted);
         return NextResponse.json(
           { ...waiting, url, goal },
           { status: 201 },
         );
       }
+      releaseBrowserControl(runId);
       throw err;
     }
 
     const interrupted = interruptFromInvokeResult(result);
     if (interrupted) {
+      transferToHuman(runId);
       const waiting = await waitingResponse(runId, interrupted);
       return NextResponse.json(
         { ...waiting, url, goal },
@@ -127,6 +138,7 @@ export async function POST(request: Request) {
       );
     }
 
+    releaseBrowserControl(runId);
     const state = result as Record<string, unknown>;
 
     return NextResponse.json(
@@ -143,6 +155,21 @@ export async function POST(request: Request) {
       { status: 201 },
     );
   } catch (err) {
+    if (err instanceof BrowserControlError) {
+      return NextResponse.json(
+        {
+          runId,
+          url,
+          goal,
+          status: "failed",
+          code: err.code,
+          error: err.message,
+        },
+        { status: 409 },
+      );
+    }
+
+    releaseBrowserControl(runId);
     const error =
       err instanceof Error
         ? err.message

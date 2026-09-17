@@ -22,7 +22,10 @@ export type PolicyConfig = {
   };
 };
 
-const DEFAULT_ORIGIN = "https://dough-credit-union.vercel.app";
+const DEFAULT_ORIGINS = [
+  "https://dough-credit-union.vercel.app",
+  "http://127.0.0.1:8000",
+];
 
 const DEFAULT_ACTIONS: PolicyAction[] = [
   "navigate",
@@ -44,7 +47,7 @@ export function getPolicyConfig(): PolicyConfig {
     .filter(Boolean);
 
   return {
-    allowedOrigins: fromEnv && fromEnv.length > 0 ? fromEnv : [DEFAULT_ORIGIN],
+    allowedOrigins: fromEnv && fromEnv.length > 0 ? fromEnv : [...DEFAULT_ORIGINS],
     allowedActions: [...DEFAULT_ACTIONS],
     riskRules: {
       safe: "allow",

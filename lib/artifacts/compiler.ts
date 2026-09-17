@@ -217,6 +217,15 @@ function generalizeArtifactName(
     text = text.replace(re, "").replace(/\s+/g, " ").trim();
   }
 
+  // Strip instance ids that never became typed literals (e.g. goal "Close account CK-7713"
+  // after a deep-link shortcut).
+  text = text
+    .replace(/\b[a-z]{1,6}[-_]\d{2,}\b/gi, "")
+    .replace(/\b\d{4,}\b/g, "")
+    .replace(UUID_RE, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
   // Replace trailing possessives / "of" leftovers.
   text = text.replace(/\b(of|for|the)\s*$/i, "").trim();
   if (!text) text = "browser workflow";
@@ -241,6 +250,10 @@ function generalizeArtifactName(
   const name = slugify(text) || "browser_workflow";
   const description =
     text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
+
+  // #region agent log
+  fetch('http://127.0.0.1:7664/ingest/fd9e0927-3b2b-4655-99d8-b10f5823d4d8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'78d987'},body:JSON.stringify({sessionId:'78d987',runId:'post-fix',hypothesisId:'name',location:'compiler.ts:generalizeArtifactName',message:'artifact name',data:{goal,literals,name,description},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
 
   return { name, description };
 }
@@ -268,6 +281,8 @@ function hrefHasInstanceTail(href: string): boolean {
     if (NUMERIC_ID_RE.test(last)) return true;
     if (UUID_RE.test(last)) return true;
     if (HEX_ID_RE.test(last) && last.length >= 8) return true;
+    // Account-style ids: CK-7713, MB_1001, etc.
+    if (/^[a-z]{1,6}[-_]\d{2,}$/i.test(last)) return true;
     return false;
   } catch {
     return false;
@@ -514,13 +529,37 @@ function pendingAlreadyInSteps(
       continue;
     }
     const t = step.target;
-    if (recorded.testId && t.testId === recorded.testId) return true;
-    if (recorded.name && (t.name === recorded.name || t.text === recorded.name)) {
-      return true;
+
+    // testId is identity — if pending has one, only match the same testId.
+    if (recorded.testId) {
+      if (t.testId === recorded.testId) {
+        // #region agent log
+        fetch('http://127.0.0.1:7664/ingest/fd9e0927-3b2b-4655-99d8-b10f5823d4d8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'78d987'},body:JSON.stringify({sessionId:'78d987',runId:'post-fix',hypothesisId:'A',location:'compiler.ts:pendingAlreadyInSteps',message:'dedupe by testId',data:{testId:recorded.testId},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+        return true;
+      }
+      continue;
     }
-    if (recorded.text && (t.text === recorded.text || t.name === recorded.text)) {
-      return true;
+
+    const nameHit =
+      (recorded.name &&
+        (t.name === recorded.name || t.text === recorded.name)) ||
+      (recorded.text &&
+        (t.text === recorded.text || t.name === recorded.text));
+    if (!nameHit) continue;
+
+    // Same label, different role (link vs button) is not a duplicate.
+    if (recorded.role && t.role && recorded.role !== t.role) {
+      // #region agent log
+      fetch('http://127.0.0.1:7664/ingest/fd9e0927-3b2b-4655-99d8-b10f5823d4d8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'78d987'},body:JSON.stringify({sessionId:'78d987',runId:'post-fix',hypothesisId:'A',location:'compiler.ts:pendingAlreadyInSteps',message:'skip dedupe role mismatch',data:{recordedRole:recorded.role,stepRole:t.role,name:recorded.name??recorded.text},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      continue;
     }
+
+    // #region agent log
+    fetch('http://127.0.0.1:7664/ingest/fd9e0927-3b2b-4655-99d8-b10f5823d4d8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'78d987'},body:JSON.stringify({sessionId:'78d987',runId:'post-fix',hypothesisId:'A',location:'compiler.ts:pendingAlreadyInSteps',message:'dedupe by name/text',data:{recorded:{role:recorded.role??null,name:recorded.name??null,text:recorded.text??null},step:{role:t.role??null,name:t.name??null}},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    return true;
   }
   return false;
 }
@@ -676,6 +715,13 @@ export function compileArtifact(
           ? (args as { url: string }).url
           : null;
       if (url && url !== state.startUrl) {
+        // Never bake account/member deep links into artifacts — those need a lookup input.
+        if (hrefHasInstanceTail(url) || /\/[a-z]{1,6}[-_]\d{2,}(?:\/|$)/i.test(url)) {
+          // #region agent log
+          fetch('http://127.0.0.1:7664/ingest/fd9e0927-3b2b-4655-99d8-b10f5823d4d8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'78d987'},body:JSON.stringify({sessionId:'78d987',runId:'post-fix',hypothesisId:'name',location:'compiler.ts:navigate',message:'skip instance navigate',data:{url},timestamp:Date.now()})}).catch(()=>{});
+          // #endregion
+          continue;
+        }
         steps.push({ action: "navigate", url });
       }
       continue;
@@ -762,6 +808,9 @@ export function compileArtifact(
 
   // HITL: policy-blocked commit may never have executed — still emit as final step.
   const pending = state.pendingCommit;
+  // #region agent log
+  fetch('http://127.0.0.1:7664/ingest/fd9e0927-3b2b-4655-99d8-b10f5823d4d8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'78d987'},body:JSON.stringify({sessionId:'78d987',hypothesisId:'A,B',location:'compiler.ts:pendingCommit',message:'compile pendingCommit',data:{hasPending:!!pending,pendingTool:pending?.toolCall?.name??null,pendingTarget:{testId:pending?.recordedTarget?.testId??null,role:pending?.recordedTarget?.role??null,name:pending?.recordedTarget?.name??null,text:pending?.recordedTarget?.text??null},existingClickNames:steps.filter(s=>s.action==='click').map(s=>({role:s.target.role??null,name:s.target.name??null,testId:s.target.testId??null})),already:pending?pendingAlreadyInSteps(steps,pending.recordedTarget):null,stepsLen:steps.length},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
   if (pending && ["click", "type", "select"].includes(pending.toolCall.name)) {
     const recorded = pending.recordedTarget;
     if (!pendingAlreadyInSteps(steps, recorded)) {
@@ -811,6 +860,29 @@ export function compileArtifact(
         });
       }
     }
+  }
+
+  if (
+    Object.keys(inputs).length === 0 &&
+    state.history.some((entry) => {
+      if (entry.toolCall.name !== "navigate" || !entry.toolResult.ok) return false;
+      const args = entry.toolCall.arguments;
+      const url =
+        typeof args === "object" &&
+        args !== null &&
+        typeof (args as { url?: unknown }).url === "string"
+          ? (args as { url: string }).url
+          : null;
+      return Boolean(
+        url &&
+          (hrefHasInstanceTail(url) ||
+            /\/[a-z]{1,6}[-_]\d{2,}(?:\/|$)/i.test(url)),
+      );
+    })
+  ) {
+    throw new ArtifactCompileError(
+      "Discovery used a direct account/member URL, so no lookup input was recorded. Re-run by searching for the account (type the id → open → close) so the workflow can take an input.",
+    );
   }
 
   const { name: inferredName, description: inferredDesc } =

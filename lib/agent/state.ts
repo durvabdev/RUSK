@@ -94,6 +94,21 @@ export const AgentStateSchema = new StateSchema({
     })
     .nullable()
     .optional(),
+  /** Explicit approval-policy action awaiting HUMAN approve/reject. */
+  pendingApproval: z
+    .object({
+      toolCall: ToolCallSchema,
+      target: z.object({
+        role: z.string().nullable().optional(),
+        name: z.string().nullable().optional(),
+      }),
+      reason: z.string(),
+    })
+    .nullable()
+    .optional(),
+  approvalStatus: z
+    .enum(["none", "pending", "approved"])
+    .default("none"),
   /** Last ≤3 observation signatures for no-progress detection. */
   observationSignatures: z.array(z.string()).default(() => []),
   noProgressCount: z.number().default(0),

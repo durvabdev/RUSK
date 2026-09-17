@@ -15,6 +15,8 @@ export type PolicyElementMeta = {
   href?: string | null;
   type?: string | null;
   text?: string | null;
+  /** HTML tag — native buttons often lack role=button. */
+  tag?: string | null;
 };
 
 export type PolicyInput = {
@@ -64,11 +66,8 @@ export function classifyRisk(
   const attributed = parseRisk(element?.risk ?? null);
   if (attributed) return attributed;
 
-  if (element?.actionCategory === "financial_transaction") {
-    return "risky";
-  }
-
   // Keyword fallback on URL + element metadata only when data-risk missing.
+  // Routine financial_transaction / form submit is NOT automatically risky.
   const haystack = [
     urlHint ?? "",
     element?.href ?? "",
@@ -77,8 +76,6 @@ export function classifyRisk(
     element?.actionCategory ?? "",
   ].join(" ");
   if (RISKY_FALLBACK.test(haystack)) return "risky";
-
-  if (action === "press_key" && isSubmitLikeKey(key)) return "risky";
 
   if (
     action === "navigate" ||

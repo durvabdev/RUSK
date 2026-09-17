@@ -43,13 +43,7 @@ type DecideRoute =
 
 type GuardRoute = "human" | "execute" | "deny";
 
-type HumanResume =
-  | {
-      action: "resume";
-    }
-  | {
-      action: "cancel";
-    };
+type HumanResume = { action: "resume" } | { action: "cancel" };
 
 export function createAgentGraph({
   browser,
@@ -98,9 +92,10 @@ export function createAgentGraph({
     if (state.status === "failed") {
       return "deny";
     }
-    // Guard rewrites a blocked credential/risky tool decision
-    // into decision.type === "human".
-    if (state.decision?.type === "human") {
+    if (
+      state.decision?.type === "human" ||
+      state.status === "waiting_for_human"
+    ) {
       return "human";
     }
     return "execute";
@@ -141,13 +136,19 @@ export function createAgentGraph({
         status: "cancelled",
         humanRequest: null,
         error: null,
+        pendingApproval: null,
+        approvalStatus: "none",
       };
     }
 
+    // Resume: human acted in the live browser. Do not auto-execute.
+    // Clear pending approval and re-observe.
     return {
       status: "running",
       humanRequest: null,
       error: null,
+      pendingApproval: null,
+      approvalStatus: "none",
       progressStuck: false,
       noProgressCount: 0,
     };
@@ -194,8 +195,7 @@ export function createAgentGraph({
 
     .addEdge("execute", "observe")
 
-    // Critical for HITL: after the human resumes, re-observe the live browser.
-    // Never replay the blocked credential/risky action.
+    // After HUMAN: re-observe. Never auto-execute a blocked/approval action.
     .addEdge("human", "observe")
 
     .addEdge("finish", "compile_artifact")
