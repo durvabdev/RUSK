@@ -14,7 +14,7 @@ npx playwright install chromium
 npm run dev
 ```
 
-Open http://localhost:3000
+Open [http://localhost:3000](http://localhost:3000)
 
 Using the UI
 
@@ -28,9 +28,9 @@ npm test
 
 ## LangSmith Tracing
 
+```
 LANGSMITH_TRACING=true
 LANGSMITH_API_KEY=your_langsmith_key
 LANGSMITH_PROJECT=rusk
 LANGCHAIN_CALLBACKS_BACKGROUND=false
-
-Traces appear as rusk-agent-run (graph nodes, model calls, tool results). Set LANGSMITH_ENDPOINT only for regional/self-hosted LangSmith.
+```
