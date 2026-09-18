@@ -88,20 +88,17 @@ export async function exportEvidence(opts: {
 
   const readme = `# Evidence
 
-- capability.json
-  Artifact produced by the genuine LLM discovery run (\`${opts.artifactId}\`).
+- **discovery-run.jsonl** — LLM discovery run \`${opts.discoveryRunId}\`. Contains \`runType: "discovery"\`, \`decisionMode: "llm"\`, and \`decision\` events (model choosing tools). Also \`action_result\`, \`artifact_compiled\`, \`run_finished\`.
 
-- discovery-run.jsonl
-  Structured observe/decide/act evidence from discovery run \`${opts.discoveryRunId}\`.
+- **replay-success.jsonl** — Successful deterministic replay \`${opts.successRunId}\`. Contains \`runType: "replay"\`, \`decisionMode: "deterministic"\`, and \`step_started\` / \`step_finished\`. **No LLM \`decision\` events** — replay executes the saved artifact without calling the model.
 
-- replay-success.jsonl
-  Deterministic replay (no LLM) — success run \`${opts.successRunId}\`.
+- **replay-exception.jsonl** — Exceptional replay \`${opts.exceptionRunId}\` (business outcome / failure / recoverable). Same deterministic step events; may include \`condition_detected\`, \`human_escalation\`, \`replay_resumed\`.
 
-- replay-exception.jsonl
-  Exceptional replay (business_outcome / recoverable / failure) — run \`${opts.exceptionRunId}\`.
+- **capability.json** — Artifact from discovery (\`${opts.artifactId}\`), the workflow replay executes.
 
-- replay-exception.png
-  ${hasPng ? "Screenshot from the exceptional replay run." : "Not present for this export (capture failed or unsupported)."}
+- **replay-exception.png** — ${hasPng ? "Screenshot from the exceptional replay run." : "Not present for this export (capture failed or unsupported)."}
+
+Replay always runs the saved artifact with \`decisionMode: "deterministic"\` and does not emit LLM \`decision\` events.
 
 ## Commands used
 

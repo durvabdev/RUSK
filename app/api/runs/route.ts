@@ -6,14 +6,14 @@ import {
   invokeConfig,
   waitingResponse,
 } from "@/lib/agent/hitl";
-import { getAgentRuntime } from "@/lib/agent/runtime";
+import { DISCOVERY_MODEL, getAgentRuntime } from "@/lib/agent/runtime";
 import {
   BrowserControlError,
   claimAutomation,
   releaseBrowserControl,
   transferToHuman,
 } from "@/lib/browser/control";
-import { writeRunMeta } from "@/lib/evidence/run-log";
+import { writeRunMeta, appendRunEvent } from "@/lib/evidence/run-log";
 import { evaluateActionPolicy } from "@/lib/policy/evaluate";
 
 export const runtime = "nodejs";
@@ -94,6 +94,14 @@ export async function POST(request: Request) {
       await getAgentRuntime();
 
     await writeRunMeta(runId, { kind: "discovery" });
+    await appendRunEvent(runId, {
+      event: "run_started",
+      runType: "discovery",
+      decisionMode: "llm",
+      goal,
+      model: DISCOVERY_MODEL,
+      startUrl: url,
+    });
 
     await browser.navigate(url);
 

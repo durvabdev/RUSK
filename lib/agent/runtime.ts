@@ -7,6 +7,8 @@ import { createBrowserTools } from "../tools/browser";
 import { createRegistry } from "../tools/registry";
 import { createAgentGraph } from "./graph";
 
+export const DISCOVERY_MODEL = "gpt-5.6-terra";
+
 type AgentGraph = ReturnType<typeof createAgentGraph>;
 
 type AgentRuntime = {
@@ -28,7 +30,7 @@ async function createRuntime(): Promise<AgentRuntime> {
   const browser = getBrowser();
 
   const model = new ChatOpenAI({
-    model: "gpt-5.6-terra",
+    model: DISCOVERY_MODEL,
     maxTokens: 1000,
     maxRetries: 3,
     timeout: 10_000,

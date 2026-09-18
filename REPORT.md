@@ -10,9 +10,6 @@ The core browser-interaction nodes are **OBSERVE**, **DECIDE**, and **EXECUTE**.
 - **EXECUTE** performs the approved browser action.
 - **CHECK_PROGRESS** runs outside model reasoning and detects repeated mutations that are not producing meaningful browser-state changes.
 - **COMPILE_ARTIFACT** runs after successful discovery and converts the completed run into the reusable deterministic workflow artifact.
-
-See Image.jpeg for the diagram.
-
 ### Getting Browser Elements
 
 Playwright MCP is the main execution layer for browser actions such as click, type, select, navigation, and keyboard input. Its accessibility snapshots provide the fresh element refs used for those actions.

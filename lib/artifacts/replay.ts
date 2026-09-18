@@ -12,6 +12,7 @@ import {
   failureScreenshotPath,
   writeRunMeta,
 } from "../evidence/run-log";
+import { sanitizeForEvidence } from "../evidence/sanitize";
 import { matchApprovalRule } from "../policy/approval";
 import { getPolicyConfig } from "../policy/config";
 import {
@@ -151,56 +152,79 @@ async function elementMetaForPolicy(
   }
 }
 
-function checkPolicy(input: {
-  action: string;
-  currentUrl?: string | null;
-  navigateUrl?: string | null;
-  element?: PolicyElementMeta | null;
-  key?: string | null;
-  stepIndex?: number;
-  /** Artifact semantic target — preferred for approval role/name. */
-  stepTarget?: {
-    role?: string | null;
-    name?: string | null;
-    text?: string | null;
-  } | null;
-}):
+/**
+ * Final policy decision after evaluateActionPolicy + approval rules.
+ * Emits exactly one policy_check (allow | origin_blocked | action_blocked |
+ * policy_requires_human). Never emits allow when approval escalates to HUMAN.
+ */
+async function checkPolicy(
+  runId: string,
+  input: {
+    action: string;
+    currentUrl?: string | null;
+    navigateUrl?: string | null;
+    element?: PolicyElementMeta | null;
+    key?: string | null;
+    stepIndex?: number;
+    /** Artifact semantic target — preferred for approval role/name. */
+    stepTarget?: {
+      role?: string | null;
+      name?: string | null;
+      text?: string | null;
+    } | null;
+  },
+): Promise<
   | Extract<ArtifactRunResult, { status: "failure" | "recoverable" }>
-  | null {
+  | null
+> {
   const decision = evaluateActionPolicy(input, getPolicyConfig());
+
+  let outcome:
+    | Extract<ArtifactRunResult, { status: "failure" | "recoverable" }>
+    | null = null;
 
   // Hard denials only — ignore classifier policy_requires_human in replay.
   if (
     !decision.ok &&
     decision.code !== "policy_requires_human"
   ) {
-    return policyFailure(decision.code, decision.message, {
+    outcome = policyFailure(decision.code, decision.message, {
       stepIndex: input.stepIndex,
       action: input.action,
     });
+  } else {
+    const el = input.element;
+    const st = input.stepTarget;
+    const approval = matchApprovalRule(input.action, {
+      role: el?.role ?? st?.role ?? null,
+      name: st?.name ?? el?.name ?? null,
+      text: el?.text ?? st?.text ?? null,
+      tag: el?.tag ?? null,
+    });
+    if (approval) {
+      outcome = {
+        status: "recoverable",
+        code: "policy_requires_human",
+        message: approval.reason,
+        retryable: true,
+        context: {
+          stepIndex: input.stepIndex,
+          action: input.action,
+        },
+      };
+    }
   }
 
-  const el = input.element;
-  const st = input.stepTarget;
-  const approval = matchApprovalRule(input.action, {
-    role: el?.role ?? st?.role ?? null,
-    name: st?.name ?? el?.name ?? null,
-    text: el?.text ?? st?.text ?? null,
-    tag: el?.tag ?? null,
+  const policyResult =
+    outcome === null ? "allow" : outcome.code;
+
+  await appendRunEvent(runId, {
+    event: "policy_check",
+    stepIndex: input.stepIndex ?? null,
+    result: policyResult,
   });
-  if (approval) {
-    return {
-      status: "recoverable",
-      code: "policy_requires_human",
-      message: approval.reason,
-      retryable: true,
-      context: {
-        stepIndex: input.stepIndex,
-        action: input.action,
-      },
-    };
-  }
-  return null;
+
+  return outcome;
 }
 
 /** Sanitized snapshot summary — no input values / typed secrets. */
@@ -300,9 +324,18 @@ async function finishReplay(
   if (result.status === "success") {
     run.status = "success";
     await appendRunEvent(run.runId, {
+      event: "outputs_extracted",
+      names: Object.keys(result.outputs),
+    });
+    await appendRunEvent(run.runId, {
       event: "replay_finished",
       status: "success",
       outputs: result.outputs,
+    });
+    await appendRunEvent(run.runId, {
+      event: "run_finished",
+      runType: "replay",
+      status: "success",
     });
   } else if (result.status === "business_outcome") {
     run.status = "business_outcome";
@@ -313,6 +346,12 @@ async function finishReplay(
       message: result.message,
       context: result.context ?? null,
     });
+    await appendRunEvent(run.runId, {
+      event: "run_finished",
+      runType: "replay",
+      status: "business_outcome",
+      code: result.code,
+    });
     await captureNonSuccessScreenshot(browser, run.runId);
   } else {
     run.status = "failed";
@@ -322,6 +361,12 @@ async function finishReplay(
       code: result.code,
       message: result.message,
       context: result.context ?? null,
+    });
+    await appendRunEvent(run.runId, {
+      event: "run_finished",
+      runType: "replay",
+      status: "failure",
+      code: result.code,
     });
     await captureNonSuccessScreenshot(browser, run.runId);
   }
@@ -365,6 +410,10 @@ async function pauseForHuman(
   await captureNonSuccessScreenshot(browser, run.runId);
 
   transferToHuman(run.runId);
+  await appendRunEvent(run.runId, {
+    event: "human_control",
+    action: "transfer_to_human",
+  });
 
   const humanRequest: HumanRequest = {
     type: error.code === "policy_requires_human" ? "approval" : "input",
@@ -604,7 +653,7 @@ async function executeReplayStep(
       action: "navigate",
       target: { url: step.url },
     });
-    const blocked = checkPolicy({
+    const blocked = await checkPolicy(ctx.run.runId, {
       action: "navigate",
       navigateUrl: step.url,
       stepIndex: evidenceStep,
@@ -627,7 +676,7 @@ async function executeReplayStep(
       action: "press_key",
       target: { key: step.key },
     });
-    const blocked = checkPolicy({
+    const blocked = await checkPolicy(ctx.run.runId, {
       action: "press_key",
       currentUrl,
       key: step.key,
@@ -743,7 +792,7 @@ async function executeReplayStep(
   {
     const policyAction =
       step.action === "set_checked" ? "click" : step.action;
-    const blocked = checkPolicy({
+    const blocked = await checkPolicy(ctx.run.runId, {
       action: policyAction,
       currentUrl,
       element,
@@ -1407,6 +1456,34 @@ async function abandonSupersededReplay(
   });
 }
 
+async function markReplayFailedAndRethrow(
+  run: ReplayRun,
+  err: unknown,
+): Promise<never> {
+  const message = err instanceof Error ? err.message : String(err);
+  run.status = "failed";
+  saveReplayRun(run);
+  await appendRunEvent(run.runId, {
+    event: "replay_finished",
+    status: "failure",
+    code: "step_failed",
+    message,
+  });
+  await appendRunEvent(run.runId, {
+    event: "run_finished",
+    runType: "replay",
+    status: "failure",
+    code: "step_failed",
+  });
+  await writeRunMeta(run.runId, {
+    kind: "replay",
+    artifactId: run.artifactId,
+    status: "failed",
+  });
+  releaseBrowserControl(run.runId);
+  throw err;
+}
+
 export async function replayArtifact(
   artifact: WorkflowArtifact,
   inputs: Record<string, unknown>,
@@ -1447,32 +1524,33 @@ export async function replayArtifact(
     event: "replay_started",
     artifactId: parsed.id,
   });
+  await appendRunEvent(runId, {
+    event: "run_started",
+    runType: "replay",
+    decisionMode: "deterministic",
+    artifactId: parsed.id,
+    inputs: sanitizeForEvidence(inputs),
+  });
 
   {
-    const blocked = checkPolicy({
+    const blocked = await checkPolicy(runId, {
       action: "navigate",
       navigateUrl: parsed.startUrl,
       stepIndex: 0,
     });
     if (blocked) {
+      if (blocked.status === "recoverable") {
+        return pauseForHuman(run, browser, blocked);
+      }
       return finishReplay(run, browser, blocked);
     }
   }
 
   try {
     await browser.navigate(parsed.startUrl);
-  } catch (err) {
-    releaseBrowserControl(runId);
-    run.status = "failed";
-    saveReplayRun(run);
-    throw err;
-  }
-  try {
     return await continueReplay(run, parsed, browser, options);
   } catch (err) {
-    releaseBrowserControl(runId);
-    run.status = "failed";
-    saveReplayRun(run);
+    await markReplayFailedAndRethrow(run, err);
     throw err;
   }
 }
@@ -1499,6 +1577,10 @@ export async function resumeReplay(
   }
 
   resumeAutomation(runId);
+  await appendRunEvent(runId, {
+    event: "human_control",
+    action: "resume_automation",
+  });
 
   const prior = run.lastError;
   await appendRunEvent(runId, {
@@ -1520,12 +1602,34 @@ export async function resumeReplay(
   run.lastError = undefined;
   run.status = "running";
   saveReplayRun(run);
+  await writeRunMeta(runId, {
+    kind: "replay",
+    artifactId: run.artifactId,
+    status: "running",
+  });
 
   const repo = createArtifactRepository();
   const artifact = await repo.get(run.artifactId);
   if (!artifact) {
     run.status = "failed";
     saveReplayRun(run);
+    await appendRunEvent(runId, {
+      event: "replay_finished",
+      status: "failure",
+      code: "artifact_missing",
+      message: `Artifact not found: ${run.artifactId}`,
+    });
+    await appendRunEvent(runId, {
+      event: "run_finished",
+      runType: "replay",
+      status: "failure",
+      code: "artifact_missing",
+    });
+    await writeRunMeta(runId, {
+      kind: "replay",
+      artifactId: run.artifactId,
+      status: "failed",
+    });
     releaseBrowserControl(runId);
     return {
       status: "failure",
@@ -1540,9 +1644,7 @@ export async function resumeReplay(
       runId,
     });
   } catch (err) {
-    releaseBrowserControl(runId);
-    run.status = "failed";
-    saveReplayRun(run);
+    await markReplayFailedAndRethrow(run, err);
     throw err;
   }
 }

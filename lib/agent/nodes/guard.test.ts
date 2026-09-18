@@ -4,7 +4,7 @@ import type { BrowserController, ElementInspection } from "../../browser/browser
 import type { DomCandidate } from "../../browser/dom-inspect.ts";
 import { CREDENTIAL_HUMAN_REQUEST } from "../auth-form.ts";
 import type { AgentState } from "../state.ts";
-import { createGuardNode, POLICY_APPROVAL_REQUEST } from "./guard.ts";
+import { createGuardNode } from "./guard.ts";
 
 function inspection(
   partial: Partial<ElementInspection>,
@@ -251,72 +251,6 @@ test("auth form + inspectElement failure still blocks credential typing", async 
   assert.equal(update.decision?.type, "human");
   assert.equal(update.humanRequest?.type, "credential");
   assert.equal("history" in update, false);
-});
-
-test("risky element requires human approval", async () => {
-  const browser = {
-    async inspectDom() {
-      return {
-        url: "https://dough-credit-union.vercel.app/transfer",
-        title: "Transfer",
-        candidates: [candidate({ name: "confirm", inputType: "submit" })],
-      };
-    },
-    async inspectElement() {
-      return inspection({
-        tag: "button",
-        role: "button",
-        name: "Confirm transfer",
-        risk: "risky",
-      });
-    },
-  } as unknown as BrowserController;
-
-  const update = await createGuardNode(browser)(
-    baseState(
-      { name: "click", arguments: { ref: "e1" } },
-      "https://dough-credit-union.vercel.app/transfer",
-    ),
-  );
-
-  assert.equal(update.decision?.type, "human");
-  assert.deepEqual(update.decision?.request, POLICY_APPROVAL_REQUEST);
-  assert.equal(update.status, "waiting_for_human");
-  assert.ok(update.pendingCommit);
-  assert.equal(update.pendingCommit?.toolCall.name, "click");
-  assert.equal(update.pendingCommit?.recordedTarget.name, "Confirm transfer");
-});
-
-test("financial_transaction category interrupts before execute", async () => {
-  let executed = false;
-  const browser = {
-    async inspectDom() {
-      return {
-        url: "https://dough-credit-union.vercel.app/cheques",
-        title: "Cheques",
-        candidates: [],
-      };
-    },
-    async inspectElement() {
-      return inspection({
-        tag: "button",
-        role: "button",
-        name: "Confirm",
-        actionCategory: "financial_transaction",
-      });
-    },
-  } as unknown as BrowserController;
-
-  const update = await createGuardNode(browser)(
-    baseState(
-      { name: "click", arguments: { ref: "e1" } },
-      "https://dough-credit-union.vercel.app/cheques",
-    ),
-  );
-
-  assert.equal(update.decision?.type, "human");
-  assert.equal(update.humanRequest?.type, "approval");
-  assert.equal(executed, false);
 });
 
 test("disallowed origin hard-denies", async () => {

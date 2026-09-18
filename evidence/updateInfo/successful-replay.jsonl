@@ -1,0 +1,63 @@
+{"timestamp":"2026-09-18T01:11:06.831Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"replay_started","artifactId":"e4420ce4-5cdb-4fb1-8615-7c0c3ef311d9"}
+{"timestamp":"2026-09-18T01:11:06.833Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"run_started","runType":"replay","decisionMode":"deterministic","artifactId":"e4420ce4-5cdb-4fb1-8615-7c0c3ef311d9","inputs":{"member_id_or_name_query":"marcus chen","email_query":"marcus@chen.com","firstName":"","lastName":"","phone":"","street":"","city":"","state":"","postalCode":"16803"}}
+{"timestamp":"2026-09-18T01:11:06.834Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"policy_check","stepIndex":0,"result":"allow"}
+{"timestamp":"2026-09-18T01:11:07.067Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"step_started","stepIndex":1,"action":"click","target":{"role":"link","name":"Member lookup"}}
+{"timestamp":"2026-09-18T01:11:07.168Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"target_resolution","stepIndex":1,"result":"resolved"}
+{"timestamp":"2026-09-18T01:11:07.737Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"policy_check","stepIndex":1,"result":"allow"}
+{"timestamp":"2026-09-18T01:11:08.317Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"step_finished","stepIndex":1,"result":"ok"}
+{"timestamp":"2026-09-18T01:11:08.319Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"step_started","stepIndex":2,"action":"type","target":{"testId":"search-input","role":"searchbox"}}
+{"timestamp":"2026-09-18T01:11:08.983Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"target_resolution","stepIndex":2,"result":"resolved"}
+{"timestamp":"2026-09-18T01:11:09.506Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"policy_check","stepIndex":2,"result":"allow"}
+{"timestamp":"2026-09-18T01:11:09.523Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"step_finished","stepIndex":2,"result":"ok"}
+{"timestamp":"2026-09-18T01:11:09.523Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"step_started","stepIndex":3,"action":"click","target":{"testId":"search-submit","role":"button","name":"Search"}}
+{"timestamp":"2026-09-18T01:11:10.586Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"target_resolution","stepIndex":3,"result":"resolved"}
+{"timestamp":"2026-09-18T01:11:11.111Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"policy_check","stepIndex":3,"result":"allow"}
+{"timestamp":"2026-09-18T01:11:11.691Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"step_finished","stepIndex":3,"result":"ok"}
+{"timestamp":"2026-09-18T01:11:11.692Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"step_started","stepIndex":4,"action":"click","target":{"role":"link","name":"View Member","within":{"kind":"matching_container","value":{"source":"input","name":"member_id_or_name_query"}}}}
+{"timestamp":"2026-09-18T01:11:11.732Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"target_resolution","stepIndex":4,"result":"resolved"}
+{"timestamp":"2026-09-18T01:11:12.269Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"policy_check","stepIndex":4,"result":"allow"}
+{"timestamp":"2026-09-18T01:11:12.844Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"step_finished","stepIndex":4,"result":"ok"}
+{"timestamp":"2026-09-18T01:11:12.845Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"step_started","stepIndex":5,"action":"click","target":{"role":"link","name":"Edit member"}}
+{"timestamp":"2026-09-18T01:11:12.902Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"target_resolution","stepIndex":5,"result":"resolved"}
+{"timestamp":"2026-09-18T01:11:13.438Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"policy_check","stepIndex":5,"result":"allow"}
+{"timestamp":"2026-09-18T01:11:14.024Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"step_finished","stepIndex":5,"result":"ok"}
+{"timestamp":"2026-09-18T01:11:14.025Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"step_started","stepIndex":6,"action":"type","target":{"role":"textbox","name":"Email"}}
+{"timestamp":"2026-09-18T01:11:14.066Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"target_resolution","stepIndex":6,"result":"resolved"}
+{"timestamp":"2026-09-18T01:11:14.598Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"policy_check","stepIndex":6,"result":"allow"}
+{"timestamp":"2026-09-18T01:11:14.617Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"step_finished","stepIndex":6,"result":"ok"}
+{"timestamp":"2026-09-18T01:11:14.618Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"step_started","stepIndex":7,"action":"type","target":{"role":"textbox","name":"First name"}}
+{"timestamp":"2026-09-18T01:11:14.636Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"target_resolution","stepIndex":7,"result":"resolved"}
+{"timestamp":"2026-09-18T01:11:15.156Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"policy_check","stepIndex":7,"result":"allow"}
+{"timestamp":"2026-09-18T01:11:15.157Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"step_finished","stepIndex":7,"result":"skipped_optional"}
+{"timestamp":"2026-09-18T01:11:15.158Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"step_started","stepIndex":8,"action":"type","target":{"role":"textbox","name":"Last name"}}
+{"timestamp":"2026-09-18T01:11:15.178Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"target_resolution","stepIndex":8,"result":"resolved"}
+{"timestamp":"2026-09-18T01:11:15.693Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"policy_check","stepIndex":8,"result":"allow"}
+{"timestamp":"2026-09-18T01:11:15.694Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"step_finished","stepIndex":8,"result":"skipped_optional"}
+{"timestamp":"2026-09-18T01:11:15.695Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"step_started","stepIndex":9,"action":"type","target":{"role":"textbox","name":"Phone"}}
+{"timestamp":"2026-09-18T01:11:15.712Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"target_resolution","stepIndex":9,"result":"resolved"}
+{"timestamp":"2026-09-18T01:11:16.230Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"policy_check","stepIndex":9,"result":"allow"}
+{"timestamp":"2026-09-18T01:11:16.231Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"step_finished","stepIndex":9,"result":"skipped_optional"}
+{"timestamp":"2026-09-18T01:11:16.232Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"step_started","stepIndex":10,"action":"type","target":{"role":"textbox","name":"Street"}}
+{"timestamp":"2026-09-18T01:11:16.253Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"target_resolution","stepIndex":10,"result":"resolved"}
+{"timestamp":"2026-09-18T01:11:16.771Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"policy_check","stepIndex":10,"result":"allow"}
+{"timestamp":"2026-09-18T01:11:16.772Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"step_finished","stepIndex":10,"result":"skipped_optional"}
+{"timestamp":"2026-09-18T01:11:16.773Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"step_started","stepIndex":11,"action":"type","target":{"role":"textbox","name":"City"}}
+{"timestamp":"2026-09-18T01:11:16.794Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"target_resolution","stepIndex":11,"result":"resolved"}
+{"timestamp":"2026-09-18T01:11:17.312Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"policy_check","stepIndex":11,"result":"allow"}
+{"timestamp":"2026-09-18T01:11:17.313Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"step_finished","stepIndex":11,"result":"skipped_optional"}
+{"timestamp":"2026-09-18T01:11:17.315Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"step_started","stepIndex":12,"action":"type","target":{"role":"textbox","name":"State"}}
+{"timestamp":"2026-09-18T01:11:17.332Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"target_resolution","stepIndex":12,"result":"resolved"}
+{"timestamp":"2026-09-18T01:11:17.848Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"policy_check","stepIndex":12,"result":"allow"}
+{"timestamp":"2026-09-18T01:11:17.849Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"step_finished","stepIndex":12,"result":"skipped_optional"}
+{"timestamp":"2026-09-18T01:11:17.851Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"step_started","stepIndex":13,"action":"type","target":{"role":"textbox","name":"Postal code"}}
+{"timestamp":"2026-09-18T01:11:17.869Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"target_resolution","stepIndex":13,"result":"resolved"}
+{"timestamp":"2026-09-18T01:11:18.385Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"policy_check","stepIndex":13,"result":"allow"}
+{"timestamp":"2026-09-18T01:11:18.405Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"step_finished","stepIndex":13,"result":"ok"}
+{"timestamp":"2026-09-18T01:11:18.406Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"step_started","stepIndex":14,"action":"click","target":{"role":"button","name":"Save changes"}}
+{"timestamp":"2026-09-18T01:11:18.425Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"target_resolution","stepIndex":14,"result":"resolved"}
+{"timestamp":"2026-09-18T01:11:18.946Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"policy_check","stepIndex":14,"result":"allow"}
+{"timestamp":"2026-09-18T01:11:19.565Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"step_finished","stepIndex":14,"result":"ok"}
+{"timestamp":"2026-09-18T01:11:19.617Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"checkpoint","result":"passed"}
+{"timestamp":"2026-09-18T01:11:19.619Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"outputs_extracted","names":["member_id","email","phone","address"]}
+{"timestamp":"2026-09-18T01:11:19.620Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"replay_finished","status":"success","outputs":{"member_id":"\"002001\"","email":"marcus@chen.com","phone":"(206) 555-0177","address":"410 Occidental Ave S, Seattle, WA 16803"}}
+{"timestamp":"2026-09-18T01:11:19.620Z","runId":"68c8ef05-2c95-443d-a9fa-72edadbc49f0","event":"run_finished","runType":"replay","status":"success"}

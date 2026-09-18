@@ -1,5 +1,5 @@
 const SENSITIVE_KEY =
-  /pass(word|wd)|secret|token|authorization|cookie|credential|api[_-]?key|auth/i;
+  /pass(word|wd)|secret|token|csrf|xsrf|authenticity_token|_token|authorization|cookie|credential|api[_-]?key|auth/i;
 
 const SECRET_VALUE =
   /^(bearer\s+\S+|sk-[a-z0-9_-]{8,}|ghp_[a-z0-9]{20,}|xox[baprs]-)/i;

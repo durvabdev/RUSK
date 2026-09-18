@@ -1,0 +1,19 @@
+{"timestamp":"2026-09-18T01:08:33.890Z","runId":"04058104-0c06-4264-8089-e0b2e2a45591","event":"replay_started","artifactId":"e4420ce4-5cdb-4fb1-8615-7c0c3ef311d9"}
+{"timestamp":"2026-09-18T01:08:33.891Z","runId":"04058104-0c06-4264-8089-e0b2e2a45591","event":"run_started","runType":"replay","decisionMode":"deterministic","artifactId":"e4420ce4-5cdb-4fb1-8615-7c0c3ef311d9","inputs":{"member_id_or_name_query":"priya naik","email_query":"priya@priya.com","firstName":"","lastName":"","phone":"","street":"","city":"","state":"","postalCode":""}}
+{"timestamp":"2026-09-18T01:08:33.893Z","runId":"04058104-0c06-4264-8089-e0b2e2a45591","event":"policy_check","stepIndex":0,"result":"allow"}
+{"timestamp":"2026-09-18T01:08:35.598Z","runId":"04058104-0c06-4264-8089-e0b2e2a45591","event":"step_started","stepIndex":1,"action":"click","target":{"role":"link","name":"Member lookup"}}
+{"timestamp":"2026-09-18T01:08:35.620Z","runId":"04058104-0c06-4264-8089-e0b2e2a45591","event":"target_resolution","stepIndex":1,"result":"resolved"}
+{"timestamp":"2026-09-18T01:08:36.171Z","runId":"04058104-0c06-4264-8089-e0b2e2a45591","event":"policy_check","stepIndex":1,"result":"allow"}
+{"timestamp":"2026-09-18T01:08:36.779Z","runId":"04058104-0c06-4264-8089-e0b2e2a45591","event":"step_finished","stepIndex":1,"result":"ok"}
+{"timestamp":"2026-09-18T01:08:36.780Z","runId":"04058104-0c06-4264-8089-e0b2e2a45591","event":"step_started","stepIndex":2,"action":"type","target":{"testId":"search-input","role":"searchbox"}}
+{"timestamp":"2026-09-18T01:08:37.362Z","runId":"04058104-0c06-4264-8089-e0b2e2a45591","event":"target_resolution","stepIndex":2,"result":"resolved"}
+{"timestamp":"2026-09-18T01:08:37.879Z","runId":"04058104-0c06-4264-8089-e0b2e2a45591","event":"policy_check","stepIndex":2,"result":"allow"}
+{"timestamp":"2026-09-18T01:08:37.916Z","runId":"04058104-0c06-4264-8089-e0b2e2a45591","event":"step_finished","stepIndex":2,"result":"ok"}
+{"timestamp":"2026-09-18T01:08:37.917Z","runId":"04058104-0c06-4264-8089-e0b2e2a45591","event":"step_started","stepIndex":3,"action":"click","target":{"testId":"search-submit","role":"button","name":"Search"}}
+{"timestamp":"2026-09-18T01:08:38.965Z","runId":"04058104-0c06-4264-8089-e0b2e2a45591","event":"target_resolution","stepIndex":3,"result":"resolved"}
+{"timestamp":"2026-09-18T01:08:39.489Z","runId":"04058104-0c06-4264-8089-e0b2e2a45591","event":"policy_check","stepIndex":3,"result":"allow"}
+{"timestamp":"2026-09-18T01:08:40.090Z","runId":"04058104-0c06-4264-8089-e0b2e2a45591","event":"step_finished","stepIndex":3,"result":"ok"}
+{"timestamp":"2026-09-18T01:08:40.091Z","runId":"04058104-0c06-4264-8089-e0b2e2a45591","event":"step_started","stepIndex":4,"action":"click","target":{"role":"link","name":"View Member","within":{"kind":"matching_container","value":{"source":"input","name":"member_id_or_name_query"}}}}
+{"timestamp":"2026-09-18T01:08:40.133Z","runId":"04058104-0c06-4264-8089-e0b2e2a45591","event":"condition_detected","class":"business_outcome","code":"member_not_found","stepIndex":4}
+{"timestamp":"2026-09-18T01:08:40.134Z","runId":"04058104-0c06-4264-8089-e0b2e2a45591","event":"replay_finished","status":"business_outcome","code":"member_not_found","message":"No matching member was found.","context":{"stepIndex":4,"action":"click","expected":"role=link name=View Member within=matching_container","currentUrl":"http://127.0.0.1:8000/members?q=priya+naik&search=","observed":"### Open tabs - 0: (current) [Member · Dough Credit Union](http://127.0.0.1:8000/members?q=priya+naik&search=) - 1: [Priya Nair · Dough Credit Union](http://..."}}
+{"timestamp":"2026-09-18T01:08:40.135Z","runId":"04058104-0c06-4264-8089-e0b2e2a45591","event":"run_finished","runType":"replay","status":"business_outcome","code":"member_not_found"}

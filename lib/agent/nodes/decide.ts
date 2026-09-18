@@ -157,6 +157,7 @@ export function createDecideNode(
     if (decision.type === "tool" && decision.call) {
       await appendRunEvent(state.runId, {
         event: "decision",
+        decisionMode: "llm",
         stepIndex: state.stepCount + 1,
         action: decision.call.name,
         target: sanitizeToolArguments(
@@ -167,6 +168,7 @@ export function createDecideNode(
     } else if (decision.type === "finish") {
       await appendRunEvent(state.runId, {
         event: "decision",
+        decisionMode: "llm",
         stepIndex: state.stepCount,
         action: "finish",
         reason: decision.reason ?? null,
@@ -174,6 +176,7 @@ export function createDecideNode(
     } else if (decision.type === "human") {
       await appendRunEvent(state.runId, {
         event: "decision",
+        decisionMode: "llm",
         stepIndex: state.stepCount,
         action: "human",
         requestType: decision.request?.type ?? null,

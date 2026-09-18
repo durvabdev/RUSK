@@ -1,0 +1,251 @@
+{
+  "id": "e4420ce4-5cdb-4fb1-8615-7c0c3ef311d9",
+  "version": 1,
+  "kind": "browser_workflow",
+  "name": "change_info",
+  "description": "Change info to \"\"",
+  "sourceRunId": "a88184d6-6ac7-4c6b-99ac-9d9ec253b45f",
+  "startUrl": "http://127.0.0.1:8000/",
+  "requiresAuthenticatedSession": false,
+  "inputs": {
+    "member_id_or_name_query": {
+      "type": "string",
+      "required": false,
+      "description": "Member ID or name"
+    },
+    "email_query": {
+      "type": "string",
+      "required": false,
+      "description": "Email"
+    },
+    "firstName": {
+      "type": "string",
+      "required": false,
+      "description": "First name"
+    },
+    "lastName": {
+      "type": "string",
+      "required": false,
+      "description": "Last name"
+    },
+    "phone": {
+      "type": "string",
+      "required": false,
+      "description": "Phone"
+    },
+    "street": {
+      "type": "string",
+      "required": false,
+      "description": "Street"
+    },
+    "city": {
+      "type": "string",
+      "required": false,
+      "description": "City"
+    },
+    "state": {
+      "type": "string",
+      "required": false,
+      "description": "State"
+    },
+    "postalCode": {
+      "type": "string",
+      "required": false,
+      "description": "Postal code"
+    }
+  },
+  "steps": [
+    {
+      "action": "click",
+      "target": {
+        "role": "link",
+        "name": "Member lookup"
+      }
+    },
+    {
+      "action": "type",
+      "target": {
+        "testId": "search-input",
+        "role": "searchbox"
+      },
+      "value": {
+        "source": "input",
+        "name": "member_id_or_name_query"
+      }
+    },
+    {
+      "action": "click",
+      "target": {
+        "testId": "search-submit",
+        "role": "button",
+        "name": "Search"
+      }
+    },
+    {
+      "action": "click",
+      "target": {
+        "role": "link",
+        "name": "View Member",
+        "within": {
+          "kind": "matching_container",
+          "value": {
+            "source": "input",
+            "name": "member_id_or_name_query"
+          }
+        }
+      }
+    },
+    {
+      "action": "click",
+      "target": {
+        "role": "link",
+        "name": "Edit member"
+      }
+    },
+    {
+      "action": "type",
+      "target": {
+        "role": "textbox",
+        "name": "Email"
+      },
+      "value": {
+        "source": "input",
+        "name": "email_query"
+      }
+    },
+    {
+      "action": "type",
+      "target": {
+        "role": "textbox",
+        "name": "First name"
+      },
+      "value": {
+        "source": "input",
+        "name": "firstName"
+      }
+    },
+    {
+      "action": "type",
+      "target": {
+        "role": "textbox",
+        "name": "Last name"
+      },
+      "value": {
+        "source": "input",
+        "name": "lastName"
+      }
+    },
+    {
+      "action": "type",
+      "target": {
+        "role": "textbox",
+        "name": "Phone"
+      },
+      "value": {
+        "source": "input",
+        "name": "phone"
+      }
+    },
+    {
+      "action": "type",
+      "target": {
+        "role": "textbox",
+        "name": "Street"
+      },
+      "value": {
+        "source": "input",
+        "name": "street"
+      }
+    },
+    {
+      "action": "type",
+      "target": {
+        "role": "textbox",
+        "name": "City"
+      },
+      "value": {
+        "source": "input",
+        "name": "city"
+      }
+    },
+    {
+      "action": "type",
+      "target": {
+        "role": "textbox",
+        "name": "State"
+      },
+      "value": {
+        "source": "input",
+        "name": "state"
+      }
+    },
+    {
+      "action": "type",
+      "target": {
+        "role": "textbox",
+        "name": "Postal code"
+      },
+      "value": {
+        "source": "input",
+        "name": "postalCode"
+      }
+    },
+    {
+      "action": "click",
+      "target": {
+        "role": "button",
+        "name": "Save changes"
+      }
+    }
+  ],
+  "outputs": [
+    {
+      "name": "member_id",
+      "type": "string",
+      "extractor": {
+        "kind": "definition",
+        "label": "Member ID"
+      }
+    },
+    {
+      "name": "email",
+      "type": "string",
+      "extractor": {
+        "kind": "definition",
+        "label": "Email"
+      }
+    },
+    {
+      "name": "phone",
+      "type": "string",
+      "extractor": {
+        "kind": "definition",
+        "label": "Phone"
+      }
+    },
+    {
+      "name": "address",
+      "type": "string",
+      "extractor": {
+        "kind": "definition",
+        "label": "Address"
+      }
+    }
+  ],
+  "conditions": [
+  {
+    "code": "member_not_found",
+    "class": "business_outcome",
+    "message": "No matching member was found.",
+    "when": {
+      "kind": "text_present",
+      "text": "No members"
+    }
+  }
+  ],
+  "checkpoint": {
+    "kind": "text_present",
+    "text": "Member profile updated"
+  },
+  "createdAt": "2026-09-18T01:00:10.109Z"
+}

@@ -13,6 +13,12 @@ export function createCompileArtifactNode(repo: ArtifactRepository) {
         status: state.status,
         artifactId: null,
       });
+      await appendRunEvent(state.runId, {
+        event: "run_finished",
+        runType: "discovery",
+        status: state.status,
+        artifactId: null,
+      });
       await writeRunMeta(state.runId, {
         kind: "discovery",
         status: state.status,
@@ -24,7 +30,17 @@ export function createCompileArtifactNode(repo: ArtifactRepository) {
       const artifact = compileArtifact(state);
       await repo.save(artifact);
       await appendRunEvent(state.runId, {
+        event: "artifact_compiled",
+        artifactId: artifact.id,
+      });
+      await appendRunEvent(state.runId, {
         event: "discovery_finished",
+        status: "success",
+        artifactId: artifact.id,
+      });
+      await appendRunEvent(state.runId, {
+        event: "run_finished",
+        runType: "discovery",
         status: "success",
         artifactId: artifact.id,
       });
@@ -38,6 +54,13 @@ export function createCompileArtifactNode(repo: ArtifactRepository) {
       const message = err instanceof Error ? err.message : String(err);
       await appendRunEvent(state.runId, {
         event: "discovery_finished",
+        status: "error",
+        artifactId: null,
+        error: message,
+      });
+      await appendRunEvent(state.runId, {
+        event: "run_finished",
+        runType: "discovery",
         status: "error",
         artifactId: null,
         error: message,
